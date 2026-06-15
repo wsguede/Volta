@@ -11,12 +11,12 @@ plugins {
 
 android {
     namespace = "com.volta.app"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.volta.app"
         minSdk = 35
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "2026.06.1"
 
