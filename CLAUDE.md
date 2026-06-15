@@ -108,6 +108,28 @@ Each screen package contains exactly one `*Screen.kt` (Composable) and one `*Vie
 
 ---
 
+## Common Commands
+
+> If `./gradlew` is missing, run `gradle wrapper --gradle-version 8.11.1` once to generate it, then commit the result.
+
+| Task | Command |
+|---|---|
+| Build debug APK | `./gradlew assembleDebug` |
+| Build release APK | `./gradlew assembleRelease` |
+| Run unit tests | `./gradlew test` |
+| Run unit tests (single class) | `./gradlew test --tests "com.volta.app.ui.settings.SettingsViewModelTest"` |
+| Check formatting | `./gradlew ktlintCheck` |
+| Auto-fix formatting | `./gradlew ktlintFormat` |
+| Static analysis | `./gradlew detekt` |
+| Android lint | `./gradlew lint` |
+| All checks (mirrors CI) | `./gradlew ktlintCheck detekt lint test` |
+| Clean build outputs | `./gradlew clean` |
+| Install debug on device | `./gradlew installDebug` |
+
+Run `./gradlew ktlintCheck detekt lint test` locally before opening a PR — this is exactly what CI runs.
+
+---
+
 ## Architecture Decision Records (ADRs)
 
 Any notable architecture decision must be documented as an ADR.
