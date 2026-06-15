@@ -49,6 +49,38 @@ Do not introduce new dependencies without an ADR.
 
 ---
 
+## Project Structure
+
+```
+app/
+└── src/
+    ├── main/
+    │   └── java/com/volta/app/
+    │       ├── ui/
+    │       │   ├── capture/          # AR capture screen (Composable + ViewModel)
+    │       │   ├── export/           # Stitching progress + export screen
+    │       │   └── settings/         # Resolution and preferences screen
+    │       ├── domain/
+    │       │   ├── capture/          # Frame capture triggering, blur detection
+    │       │   ├── coverage/         # Sphere coverage tracking
+    │       │   └── stitching/        # Stitching orchestration
+    │       ├── data/
+    │       │   ├── camera/           # CameraX integration
+    │       │   ├── ar/               # ARCore integration
+    │       │   ├── gps/              # Location / GPS
+    │       │   └── export/           # MediaStore / file system
+    │       ├── di/                   # Hilt modules
+    │       └── VoltaApplication.kt
+    ├── test/                         # Unit tests (mirrors main/ structure)
+    └── androidTest/                  # Instrumentation tests
+docs/
+└── adr/                              # Architecture Decision Records
+```
+
+Each screen package contains exactly one `*Screen.kt` (Composable) and one `*ViewModel.kt`. No other files belong in `ui/` packages.
+
+---
+
 ## Code Style
 
 - **ktlint** enforces formatting. Run `./gradlew ktlintCheck` before committing. CI will fail on violations.
@@ -56,6 +88,23 @@ Do not introduce new dependencies without an ADR.
 - Follow the [Kotlin coding conventions](https://kotlinlang.org/docs/coding-conventions.html).
 - Use `Timber` for all logging — never use `android.util.Log` directly.
 - No `TAG` constants — Timber infers the tag automatically.
+
+**Naming conventions:**
+- Composables: `PascalCase`, noun or noun-phrase (e.g., `CaptureScreen`, `SphereOverlay`).
+- ViewModels: `PascalCase` suffixed with `ViewModel` (e.g., `CaptureViewModel`).
+- StateFlow UI state: a sealed class or data class suffixed with `UiState` (e.g., `CaptureUiState`).
+- Repository/data classes: suffixed with `Repository` or `DataSource` (e.g., `CameraRepository`).
+- Hilt modules: suffixed with `Module` (e.g., `CameraModule`).
+
+**Coroutines:**
+- Launch coroutines from `viewModelScope` inside ViewModels.
+- Use `Dispatchers.IO` for file and sensor I/O; `Dispatchers.Default` for CPU-bound work (stitching, blur detection).
+- Never hardcode `Dispatchers` — inject them so they can be replaced in tests.
+
+**Compose:**
+- Composables must be stateless where possible — hoist state to the ViewModel.
+- Pass lambdas for events, not ViewModel references, into Composables.
+- Prefix preview functions with `Preview` and annotate with `@Preview`.
 
 ---
 
