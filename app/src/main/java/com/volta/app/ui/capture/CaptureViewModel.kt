@@ -16,8 +16,8 @@ data class CaptureUiState(
 
 @HiltViewModel
 class CaptureViewModel
-@Inject
-constructor() : ViewModel() {
-    private val _uiState = MutableStateFlow(CaptureUiState())
-    val uiState: StateFlow<CaptureUiState> = _uiState.asStateFlow()
-}
+    @Inject
+    constructor() : ViewModel() {
+        private val _uiState = MutableStateFlow(CaptureUiState())
+        val uiState: StateFlow<CaptureUiState> = _uiState.asStateFlow()
+    }

@@ -5,9 +5,9 @@ import javax.inject.Inject
 import javax.inject.Named
 
 class ExportRepository
-@Inject
-constructor(
-    @Named("IO") private val dispatcher: CoroutineDispatcher,
-) {
-    // TODO: Write equirectangular JPEG with GPano XMP + GPS EXIF to MediaStore
-}
+    @Inject
+    constructor(
+        @Named("IO") private val dispatcher: CoroutineDispatcher,
+    ) {
+        // TODO: Write equirectangular JPEG with GPano XMP + GPS EXIF to MediaStore
+    }

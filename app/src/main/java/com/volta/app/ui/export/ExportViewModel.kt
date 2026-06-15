@@ -21,8 +21,8 @@ sealed class ExportUiState {
 
 @HiltViewModel
 class ExportViewModel
-@Inject
-constructor() : ViewModel() {
-    private val _uiState = MutableStateFlow<ExportUiState>(ExportUiState.Idle)
-    val uiState: StateFlow<ExportUiState> = _uiState.asStateFlow()
-}
+    @Inject
+    constructor() : ViewModel() {
+        private val _uiState = MutableStateFlow<ExportUiState>(ExportUiState.Idle)
+        val uiState: StateFlow<ExportUiState> = _uiState.asStateFlow()
+    }

@@ -18,12 +18,12 @@ data class SettingsUiState(
 
 @HiltViewModel
 class SettingsViewModel
-@Inject
-constructor() : ViewModel() {
-    private val _uiState = MutableStateFlow(SettingsUiState())
-    val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+    @Inject
+    constructor() : ViewModel() {
+        private val _uiState = MutableStateFlow(SettingsUiState())
+        val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
-    fun setOutputResolution(resolution: OutputResolution) {
-        _uiState.value = _uiState.value.copy(outputResolution = resolution)
+        fun setOutputResolution(resolution: OutputResolution) {
+            _uiState.value = _uiState.value.copy(outputResolution = resolution)
+        }
     }
-}
