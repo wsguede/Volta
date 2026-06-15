@@ -1,0 +1,28 @@
+config:
+  validation: true
+  warningsAsErrors: false
+
+comments:
+  ForbiddenComment:
+    active: false
+
+naming:
+  FunctionNaming:
+    active: true
+    ignoreAnnotated:
+      - 'Composable'
+
+style:
+  MagicNumber:
+    active: true
+    ignoreEnums: true
+  UnusedPrivateMember:
+    active: true
+    ignoreAnnotated:
+      - 'Preview'
+  UnusedPrivateProperty:
+    active: false
+  UnusedParameter:
+    active: true
+    ignoreAnnotated:
+      - 'Composable'

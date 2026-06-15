@@ -44,6 +44,11 @@ android {
     }
 }
 
+detekt {
+    config.setFrom(rootProject.files("config/detekt/detekt.yml"))
+    buildUponDefaultConfig = true
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
