@@ -17,8 +17,9 @@ data class SettingsUiState(
 )
 
 @HiltViewModel
-class SettingsViewModel @Inject constructor() : ViewModel() {
-
+class SettingsViewModel
+@Inject
+constructor() : ViewModel() {
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
