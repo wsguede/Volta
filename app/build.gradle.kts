@@ -28,7 +28,7 @@ android {
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
     }
@@ -64,7 +64,9 @@ dependencies {
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
     implementation(libs.arcore)
-    implementation(libs.opencv)
+    // OpenCV is not published to Maven Central. Add it as a local AAR module after
+    // downloading the OpenCV Android SDK: https://opencv.org/releases/
+    // implementation(libs.opencv)
     implementation(libs.timber)
     implementation(libs.kotlinx.serialization.json)
 
