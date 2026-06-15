@@ -2,10 +2,6 @@ config:
   validation: true
   warningsAsErrors: false
 
-comments:
-  ForbiddenComment:
-    active: false
-
 naming:
   FunctionNaming:
     active: true
@@ -13,6 +9,8 @@ naming:
       - 'Composable'
 
 style:
+  ForbiddenComment:
+    active: false
   MagicNumber:
     active: true
     ignoreEnums: true
