@@ -1,10 +1,10 @@
 package com.volta.app.data.camera
 
-import androidx.camera.core.ImageProxy
+import com.volta.app.domain.model.FrameData
 import kotlinx.coroutines.flow.Flow
 
 interface CameraRepository {
-    fun cameraFrames(): Flow<ImageProxy>
+    fun cameraFrames(): Flow<FrameData>
     fun startPreview()
     fun stopPreview()
 }

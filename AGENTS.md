@@ -76,7 +76,7 @@ Dependencies are managed via the Gradle version catalog at `gradle/libs.versions
 | Layer | Responsibility | Allowed dependencies |
 |---|---|---|
 | `ui/` | Composables and ViewModels | `domain/`, Android framework |
-| `domain/` | Business logic (capture, coverage, stitching) | Kotlin stdlib only — no Android imports |
+| `domain/` | Business logic (capture, coverage, stitching) | Kotlin stdlib + kotlinx-coroutines only — no Android imports |
 | `data/` | Camera, ARCore, GPS, file system access | Android framework, external SDKs |
 | `di/` | Hilt modules | All layers |
 
@@ -99,9 +99,10 @@ app/
     │       │   ├── settings/         # Resolution and preferences screen
     │       │   └── theme/            # Material 3 dark theme
     │       ├── domain/
+    │       │   ├── model/            # Shared domain types (GpsCoordinates, FrameData)
     │       │   ├── capture/          # Frame capture triggering, blur detection
     │       │   ├── coverage/         # Sphere coverage tracking
-    │       │   └── stitching/        # Stitching orchestration
+    │       │   └── stitching/        # Stitching orchestration, OutputResolution
     │       ├── data/
     │       │   ├── camera/           # CameraX integration
     │       │   ├── ar/               # ARCore integration
@@ -147,7 +148,9 @@ Each screen package contains exactly one `*Screen.kt` (Composable), one `*ViewMo
 | AR | ARCore | [0006](docs/adr/0006-android-first.md) |
 | Stitching | OpenCV (planned) | [0004](docs/adr/0004-use-opencv-for-stitching.md) |
 | Async | Kotlin Coroutines + Flow | [0005](docs/adr/0005-use-kotlin-coroutines.md) |
-| Logging | Timber | — |
+| Logging | Timber | [0007](docs/adr/0007-use-timber-for-logging.md) |
+| Navigation | Navigation Compose | [0008](docs/adr/0008-use-navigation-compose.md) |
+| Location | Play Services Location | [0009](docs/adr/0009-use-play-services-location.md) |
 | Formatting | ktlint | — |
 | Static analysis | Detekt | — |
 | CI | GitHub Actions | — |

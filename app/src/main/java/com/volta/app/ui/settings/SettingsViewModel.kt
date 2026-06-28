@@ -1,6 +1,7 @@
 package com.volta.app.ui.settings
 
 import androidx.lifecycle.ViewModel
+import com.volta.app.domain.stitching.OutputResolution
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
