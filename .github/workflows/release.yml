@@ -1,0 +1,133 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Compute CalVer version
+        id: version
+        run: |
+          YEAR=$(date +%Y)
+          MONTH=$(date +%-m)
+
+          # Count existing releases this month to determine micro version
+          EXISTING=$(git tag --list "v${YEAR}.${MONTH}.*" | wc -l)
+          MICRO=$((EXISTING))
+
+          VERSION="${YEAR}.${MONTH}.${MICRO}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "micro=${MICRO}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Computed version: ${VERSION}"
+
+      - name: Check if tag already exists
+        id: check_tag
+        run: |
+          if git rev-parse "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build release APK
+        if: steps.check_tag.outputs.exists == 'false'
+        run: ./gradlew assembleRelease -PVERSION_MICRO=${{ steps.version.outputs.micro }}
+
+      - name: Generate changelog
+        if: steps.check_tag.outputs.exists == 'false'
+        id: changelog
+        run: |
+          # Find the previous release tag, excluding the tag about to be created
+          CURRENT_TAG="${{ steps.version.outputs.tag }}"
+          PREV_TAG=$(git tag --sort=-v:refname --list 'v*' | grep -v "^${CURRENT_TAG}$" | head -n 1)
+
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..HEAD"
+          fi
+
+          {
+            echo "changelog<<CHANGELOG_EOF"
+            echo "## What's Changed"
+            echo ""
+
+            # Group commits by conventional commit type
+            FEATS=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^feat" 2>/dev/null || true)
+            FIXES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^fix" 2>/dev/null || true)
+            REFACTORS=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^refactor" 2>/dev/null || true)
+            CHORES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^chore" 2>/dev/null || true)
+            DOCS=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^docs" 2>/dev/null || true)
+            TESTS=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^test" 2>/dev/null || true)
+
+            if [ -n "$FEATS" ]; then
+              echo "### Features"
+              echo "$FEATS"
+              echo ""
+            fi
+
+            if [ -n "$FIXES" ]; then
+              echo "### Bug Fixes"
+              echo "$FIXES"
+              echo ""
+            fi
+
+            if [ -n "$REFACTORS" ]; then
+              echo "### Refactoring"
+              echo "$REFACTORS"
+              echo ""
+            fi
+
+            if [ -n "$DOCS" ]; then
+              echo "### Documentation"
+              echo "$DOCS"
+              echo ""
+            fi
+
+            if [ -n "$TESTS" ]; then
+              echo "### Tests"
+              echo "$TESTS"
+              echo ""
+            fi
+
+            if [ -n "$CHORES" ]; then
+              echo "### Maintenance"
+              echo "$CHORES"
+              echo ""
+            fi
+
+            echo "---"
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-initial}...${{ steps.version.outputs.tag }}"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Volta ${{ steps.version.outputs.version }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: false
+          files: app/build/outputs/apk/release/*.apk
+          generate_release_notes: false
