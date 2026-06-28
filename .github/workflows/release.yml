@@ -48,8 +48,17 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Decode keystore
+        if: steps.check_tag.outputs.exists == 'false'
+        run: echo "${{ secrets.RELEASE_KEYSTORE }}" | base64 -d > ${{ runner.temp }}/release.keystore
+
       - name: Build release APK
         if: steps.check_tag.outputs.exists == 'false'
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease -PVERSION_MICRO=${{ steps.version.outputs.micro }}
 
       - name: Generate changelog
