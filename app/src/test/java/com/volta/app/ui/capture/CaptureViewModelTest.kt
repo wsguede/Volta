@@ -32,7 +32,7 @@ class CaptureViewModelTest {
     fun `initial camera permission is NotRequested`() {
         val viewModel = CaptureViewModel()
         assertThat(viewModel.uiState.value.cameraPermission)
-            .isEqualTo(CameraPermissionState.NotRequested)
+            .isEqualTo(CapturePermissionState.NotRequested)
     }
 
     @Test
@@ -40,7 +40,7 @@ class CaptureViewModelTest {
         val viewModel = CaptureViewModel()
         viewModel.onCameraPermissionResult(granted = true, isPermanentlyDenied = false)
         assertThat(viewModel.uiState.value.cameraPermission)
-            .isEqualTo(CameraPermissionState.Granted)
+            .isEqualTo(CapturePermissionState.Granted)
     }
 
     @Test
@@ -48,7 +48,7 @@ class CaptureViewModelTest {
         val viewModel = CaptureViewModel()
         viewModel.onCameraPermissionResult(granted = false, isPermanentlyDenied = false)
         assertThat(viewModel.uiState.value.cameraPermission)
-            .isEqualTo(CameraPermissionState.Denied)
+            .isEqualTo(CapturePermissionState.Denied)
     }
 
     @Test
@@ -56,7 +56,7 @@ class CaptureViewModelTest {
         val viewModel = CaptureViewModel()
         viewModel.onCameraPermissionResult(granted = false, isPermanentlyDenied = true)
         assertThat(viewModel.uiState.value.cameraPermission)
-            .isEqualTo(CameraPermissionState.PermanentlyDenied)
+            .isEqualTo(CapturePermissionState.PermanentlyDenied)
     }
 
     @Test
@@ -65,7 +65,7 @@ class CaptureViewModelTest {
         viewModel.onCameraPermissionResult(granted = false, isPermanentlyDenied = true)
         viewModel.onCameraPermissionResult(granted = true, isPermanentlyDenied = false)
         assertThat(viewModel.uiState.value.cameraPermission)
-            .isEqualTo(CameraPermissionState.Granted)
+            .isEqualTo(CapturePermissionState.Granted)
     }
 
     @Test
@@ -73,7 +73,7 @@ class CaptureViewModelTest {
         val viewModel = CaptureViewModel()
         viewModel.onCameraPermissionResult(granted = true, isPermanentlyDenied = true)
         assertThat(viewModel.uiState.value.cameraPermission)
-            .isEqualTo(CameraPermissionState.Granted)
+            .isEqualTo(CapturePermissionState.Granted)
     }
 
     // Location permission state machine

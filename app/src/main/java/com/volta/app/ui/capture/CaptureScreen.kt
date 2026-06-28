@@ -2,11 +2,7 @@ package com.volta.app.ui.capture
 
 import android.Manifest
 import android.content.Context
-import android.content.ContextWrapper
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
@@ -44,23 +40,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.volta.app.ui.theme.VoltaTheme
-
-private fun Context.findComponentActivity(): ComponentActivity {
-    var ctx = this
-    while (ctx is ContextWrapper) {
-        if (ctx is ComponentActivity) return ctx
-        ctx = ctx.baseContext
-    }
-    error("No ComponentActivity found in context chain")
-}
-
-private fun Context.openAppSettings() {
-    startActivity(
-        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-            data = Uri.fromParts("package", packageName, null)
-        }
-    )
-}
+import com.volta.app.ui.util.findComponentActivity
+import com.volta.app.ui.util.openAppSettings
 
 @Composable
 fun CaptureScreen(
@@ -71,26 +52,53 @@ fun CaptureScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = context.findComponentActivity()
-    val lifecycleOwner = LocalLifecycleOwner.current
 
-    val cameraPermissionLauncher =
-        rememberLauncherForActivityResult(RequestPermission()) { granted ->
-            val isPermanent = !granted &&
-                !activity.shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)
-            viewModel.onCameraPermissionResult(granted = granted, isPermanentlyDenied = isPermanent)
-        }
+    val cameraLauncher = rememberLauncherForActivityResult(RequestPermission()) { granted ->
+        val isPermanent = !granted &&
+            !activity.shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)
+        viewModel.onCameraPermissionResult(granted = granted, isPermanentlyDenied = isPermanent)
+    }
+    val locationLauncher = rememberLauncherForActivityResult(RequestPermission()) { granted ->
+        viewModel.onLocationPermissionResult(granted)
+    }
 
     LaunchedEffect(Unit) {
-        val alreadyGranted = ContextCompat.checkSelfPermission(
+        val cameraGranted = ContextCompat.checkSelfPermission(
             context, Manifest.permission.CAMERA
         ) == PackageManager.PERMISSION_GRANTED
-        if (alreadyGranted) {
-            viewModel.onCameraPermissionResult(granted = true, isPermanentlyDenied = false)
+        val locationGranted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        if (cameraGranted) {
+            viewModel.onCameraPermissionResult(true, isPermanentlyDenied = false)
         } else {
-            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            cameraLauncher.launch(Manifest.permission.CAMERA)
+        }
+        if (locationGranted) {
+            viewModel.onLocationPermissionResult(true)
+        } else {
+            locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
     }
 
+    PermissionsResumeObserver(activity = activity, context = context, viewModel = viewModel)
+
+    CaptureContent(
+        uiState = uiState,
+        onExport = onExport,
+        onSettings = onSettings,
+        onRequestCameraPermission = { cameraLauncher.launch(Manifest.permission.CAMERA) },
+        onOpenAppSettings = { context.openAppSettings() }
+    )
+}
+
+@Composable
+private fun PermissionsResumeObserver(
+    activity: ComponentActivity,
+    context: Context,
+    viewModel: CaptureViewModel
+) {
+    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -98,7 +106,7 @@ fun CaptureScreen(
                     context, Manifest.permission.CAMERA
                 ) == PackageManager.PERMISSION_GRANTED
                 val hasBeenRequested =
-                    viewModel.uiState.value.cameraPermission != CameraPermissionState.NotRequested
+                    viewModel.uiState.value.cameraPermission != CapturePermissionState.NotRequested
                 if (cameraGranted) {
                     viewModel.onCameraPermissionResult(granted = true, isPermanentlyDenied = false)
                 } else if (hasBeenRequested) {
@@ -119,14 +127,6 @@ fun CaptureScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-
-    CaptureContent(
-        uiState = uiState,
-        onExport = onExport,
-        onSettings = onSettings,
-        onRequestCameraPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
-        onOpenAppSettings = { context.openAppSettings() }
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -156,23 +156,23 @@ internal fun CaptureContent(
                 .padding(padding)
         ) {
             when (uiState.cameraPermission) {
-                CameraPermissionState.NotRequested -> CameraStartingPlaceholder()
-                CameraPermissionState.Granted -> CaptureActiveContent(
+                CapturePermissionState.NotRequested -> CameraStartingPlaceholder()
+                CapturePermissionState.Granted -> CaptureActiveContent(
                     uiState = uiState,
                     onExport = onExport
                 )
-                CameraPermissionState.Denied -> CameraPermissionDeniedCard(
+                CapturePermissionState.Denied -> CameraPermissionDeniedCard(
                     onOpenAppSettings = onOpenAppSettings,
                     onRetry = onRequestCameraPermission,
                     modifier = Modifier.align(Alignment.Center)
                 )
-                CameraPermissionState.PermanentlyDenied -> CameraPermissionDeniedCard(
+                CapturePermissionState.PermanentlyDenied -> CameraPermissionDeniedCard(
                     onOpenAppSettings = onOpenAppSettings,
                     modifier = Modifier.align(Alignment.Center)
                 )
             }
 
-            if (uiState.cameraPermission == CameraPermissionState.Granted &&
+            if (uiState.cameraPermission == CapturePermissionState.Granted &&
                 uiState.gpsStatus == CaptureGpsStatus.Unavailable
             ) {
                 GpsUnavailableBanner(modifier = Modifier.align(Alignment.TopCenter))
@@ -271,7 +271,7 @@ fun PreviewCaptureContent() {
     VoltaTheme {
         CaptureContent(
             uiState = CaptureUiState(
-                cameraPermission = CameraPermissionState.Granted,
+                cameraPermission = CapturePermissionState.Granted,
                 framesCaptured = 42,
                 coveragePercent = 73.5f
             ),
@@ -298,7 +298,7 @@ fun PreviewCaptureContentNotRequested() {
 fun PreviewCaptureContentDenied() {
     VoltaTheme {
         CaptureContent(
-            uiState = CaptureUiState(cameraPermission = CameraPermissionState.Denied),
+            uiState = CaptureUiState(cameraPermission = CapturePermissionState.Denied),
             onExport = {},
             onSettings = {}
         )
@@ -310,7 +310,7 @@ fun PreviewCaptureContentDenied() {
 fun PreviewCaptureContentPermanentlyDenied() {
     VoltaTheme {
         CaptureContent(
-            uiState = CaptureUiState(cameraPermission = CameraPermissionState.PermanentlyDenied),
+            uiState = CaptureUiState(cameraPermission = CapturePermissionState.PermanentlyDenied),
             onExport = {},
             onSettings = {}
         )
@@ -323,7 +323,7 @@ fun PreviewCaptureContentGpsUnavailable() {
     VoltaTheme {
         CaptureContent(
             uiState = CaptureUiState(
-                cameraPermission = CameraPermissionState.Granted,
+                cameraPermission = CapturePermissionState.Granted,
                 framesCaptured = 5,
                 coveragePercent = 20f,
                 gpsStatus = CaptureGpsStatus.Unavailable

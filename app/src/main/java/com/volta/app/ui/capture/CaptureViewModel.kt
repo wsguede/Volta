@@ -24,9 +24,9 @@ class CaptureViewModel @Inject constructor() : ViewModel() {
 
     fun onCameraPermissionResult(granted: Boolean, isPermanentlyDenied: Boolean) {
         val permission = when {
-            granted -> CameraPermissionState.Granted
-            isPermanentlyDenied -> CameraPermissionState.PermanentlyDenied
-            else -> CameraPermissionState.Denied
+            granted -> CapturePermissionState.Granted
+            isPermanentlyDenied -> CapturePermissionState.PermanentlyDenied
+            else -> CapturePermissionState.Denied
         }
         _uiState.update { it.copy(cameraPermission = permission) }
     }
