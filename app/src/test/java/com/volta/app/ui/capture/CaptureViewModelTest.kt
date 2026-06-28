@@ -68,6 +68,14 @@ class CaptureViewModelTest {
             .isEqualTo(CameraPermissionState.Granted)
     }
 
+    @Test
+    fun `granted flag takes priority over isPermanentlyDenied when both are true`() {
+        val viewModel = CaptureViewModel()
+        viewModel.onCameraPermissionResult(granted = true, isPermanentlyDenied = true)
+        assertThat(viewModel.uiState.value.cameraPermission)
+            .isEqualTo(CameraPermissionState.Granted)
+    }
+
     // Location permission state machine
 
     @Test

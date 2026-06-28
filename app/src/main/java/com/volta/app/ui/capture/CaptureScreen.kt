@@ -54,6 +54,14 @@ private fun Context.findComponentActivity(): ComponentActivity {
     error("No ComponentActivity found in context chain")
 }
 
+private fun Context.openAppSettings() {
+    startActivity(
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", packageName, null)
+        }
+    )
+}
+
 @Composable
 fun CaptureScreen(
     onExport: () -> Unit,
@@ -117,18 +125,13 @@ fun CaptureScreen(
         onExport = onExport,
         onSettings = onSettings,
         onRequestCameraPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
-        onOpenAppSettings = {
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", context.packageName, null)
-            }
-            context.startActivity(intent)
-        }
+        onOpenAppSettings = { context.openAppSettings() }
     )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CaptureContent(
+internal fun CaptureContent(
     uiState: CaptureUiState,
     onExport: () -> Unit,
     onSettings: () -> Unit,
