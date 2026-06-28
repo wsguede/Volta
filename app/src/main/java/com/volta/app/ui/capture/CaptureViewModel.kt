@@ -6,6 +6,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 @HiltViewModel
 class CaptureViewModel @Inject constructor() : ViewModel() {
@@ -14,10 +15,24 @@ class CaptureViewModel @Inject constructor() : ViewModel() {
     val uiState: StateFlow<CaptureUiState> = _uiState.asStateFlow()
 
     fun startSession() {
-        _uiState.value = _uiState.value.copy(isSessionActive = true)
+        _uiState.update { it.copy(isSessionActive = true) }
     }
 
     fun stopSession() {
-        _uiState.value = _uiState.value.copy(isSessionActive = false)
+        _uiState.update { it.copy(isSessionActive = false) }
+    }
+
+    fun onCameraPermissionResult(granted: Boolean, isPermanentlyDenied: Boolean) {
+        val permission = when {
+            granted -> CapturePermissionState.Granted
+            isPermanentlyDenied -> CapturePermissionState.PermanentlyDenied
+            else -> CapturePermissionState.Denied
+        }
+        _uiState.update { it.copy(cameraPermission = permission) }
+    }
+
+    fun onLocationPermissionResult(granted: Boolean) {
+        val status = if (granted) CaptureGpsStatus.Acquiring else CaptureGpsStatus.Unavailable
+        _uiState.update { it.copy(gpsStatus = status) }
     }
 }
