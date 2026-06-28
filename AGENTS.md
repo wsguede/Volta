@@ -63,39 +63,6 @@ Dependencies are managed via the Gradle version catalog at `gradle/libs.versions
 
 ---
 
-## CI/CD Pipeline
-
-CI runs on every push and pull request to `main` via GitHub Actions (`.github/workflows/ci.yml`).
-
-| Job | What it runs | Depends on |
-|---|---|---|
-| **Code Quality** | `ktlintCheck` + `detekt` | — |
-| **Android Lint** | `lint` | — |
-| **Unit Tests** | `testDebugUnitTest` | — |
-| **Build** | `assembleDebug` (APK uploaded as artifact) | All three above |
-
-### Release Pipeline
-
-Pushes to `main` also trigger `.github/workflows/release.yml`:
-
-1. Computes a CalVer version tag (`vYYYY.M.MICRO`) by counting existing tags for the current month
-2. Builds a release APK
-3. Generates a changelog grouped by conventional commit type (features, fixes, refactoring, docs, tests, maintenance)
-4. Creates a GitHub Release with the APK attached
-
-The release workflow is idempotent — if the computed tag already exists, it skips all steps.
-
-### Versioning
-
-CalVer format: `YYYY.M.MICRO` (e.g., `2026.6.0`, `2026.6.1`).
-
-- `YYYY.M` is derived from the current date at build time
-- `MICRO` increments per release within the same month
-- `versionCode` is computed as `YYYY * 1000 + M * 10` for Play Store compatibility
-- Pass `-PVERSION_MICRO=N` to override the micro version in release builds
-
----
-
 ## Architecture
 
 **Pattern:** MVVM with Jetpack — unidirectional data flow.
