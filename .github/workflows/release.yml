@@ -30,11 +30,12 @@ jobs:
           MONTH=$(date +%-m)
 
           # Count existing releases this month to determine micro version
-          EXISTING=$(git tag --list "${YEAR}.${MONTH}.*" | wc -l)
+          EXISTING=$(git tag --list "v${YEAR}.${MONTH}.*" | wc -l)
           MICRO=$((EXISTING))
 
           VERSION="${YEAR}.${MONTH}.${MICRO}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "micro=${MICRO}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Computed version: ${VERSION}"
 
@@ -49,7 +50,7 @@ jobs:
 
       - name: Build release APK
         if: steps.check_tag.outputs.exists == 'false'
-        run: ./gradlew assembleRelease -PVERSION_MICRO=${{ steps.version.outputs.version }}
+        run: ./gradlew assembleRelease -PVERSION_MICRO=${{ steps.version.outputs.micro }}
 
       - name: Generate changelog
         if: steps.check_tag.outputs.exists == 'false'
