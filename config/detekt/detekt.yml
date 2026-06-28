@@ -26,7 +26,3 @@ naming:
     functionPattern: '[a-zA-Z][a-zA-Z0-9]*'
   TopLevelPropertyNaming:
     constantPattern: '[A-Z][A-Za-z0-9]*'
-
-formatting:
-  active: true
-  android: true

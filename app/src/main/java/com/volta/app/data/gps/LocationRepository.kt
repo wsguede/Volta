@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.Flow
 data class GpsCoordinates(
     val latitude: Double,
     val longitude: Double,
-    val accuracyMeters: Float,
+    val accuracyMeters: Float
 )
 
 interface LocationRepository {

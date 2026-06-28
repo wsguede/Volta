@@ -5,7 +5,7 @@ data class CaptureUiState(
     val framesCaptured: Int = 0,
     val coveragePercent: Float = 0f,
     val isArReady: Boolean = false,
-    val gpsStatus: GpsStatus = GpsStatus.Acquiring,
+    val gpsStatus: GpsStatus = GpsStatus.Acquiring
 )
 
 sealed interface GpsStatus {

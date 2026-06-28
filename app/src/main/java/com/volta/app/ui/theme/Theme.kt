@@ -13,7 +13,7 @@ private val VoltaColorScheme = darkColorScheme(
     onBackground = VoltaOnBackground,
     surface = VoltaSurface,
     onSurface = VoltaOnSurface,
-    error = VoltaError,
+    error = VoltaError
 )
 
 @Composable
@@ -21,6 +21,6 @@ fun VoltaTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = VoltaColorScheme,
         typography = VoltaTypography,
-        content = content,
+        content = content
     )
 }

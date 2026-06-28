@@ -17,10 +17,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
-fun ExportScreen(
-    onFinished: () -> Unit,
-    viewModel: ExportViewModel = hiltViewModel(),
-) {
+fun ExportScreen(onFinished: () -> Unit, viewModel: ExportViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold { padding ->
@@ -30,7 +27,7 @@ fun ExportScreen(
                 .padding(padding)
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.Center
         ) {
             when (uiState.phase) {
                 ExportPhase.Stitching -> {

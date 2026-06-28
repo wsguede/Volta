@@ -7,7 +7,7 @@ data class CapturedFrame(
     val width: Int,
     val height: Int,
     val region: SphereRegion,
-    val timestampMs: Long,
+    val timestampMs: Long
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -22,6 +22,6 @@ interface FrameAnalyzer {
     fun shouldCapture(
         currentOrientation: SphereRegion,
         lastCapturedOrientation: SphereRegion?,
-        angularThresholdDegrees: Float,
+        angularThresholdDegrees: Float
     ): Boolean
 }

@@ -30,7 +30,7 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
+                "proguard-rules.pro"
             )
         }
     }
@@ -111,6 +111,10 @@ dependencies {
     androidTestImplementation(libs.compose.ui.test.junit4)
 }
 
+tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    jvmTarget = "17"
+}
+
 detekt {
     config.setFrom(rootProject.files("config/detekt/detekt.yml"))
     buildUponDefaultConfig = true
@@ -119,7 +123,8 @@ detekt {
 
 fun generateVersionCode(): Int {
     val today = LocalDate.now()
-    return today.year * 1000 + today.monthValue * 10
+    val micro = project.findProperty("VERSION_MICRO")?.toString()?.toIntOrNull() ?: 0
+    return today.year * 10000 + today.monthValue * 100 + micro
 }
 
 fun generateVersionName(): String {

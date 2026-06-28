@@ -20,10 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(
-    onBack: () -> Unit,
-    viewModel: SettingsViewModel = hiltViewModel(),
-) {
+fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -34,18 +31,18 @@ fun SettingsScreen(
                     IconButton(onClick = onBack) {
                         Text("←")
                     }
-                },
+                }
             )
-        },
+        }
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
         ) {
             Text(
                 text = "Output Resolution",
-                modifier = Modifier.padding(padding),
+                modifier = Modifier.padding(padding)
             )
             OutputResolution.entries.forEach { resolution ->
                 ListItem(
@@ -53,12 +50,12 @@ fun SettingsScreen(
                     leadingContent = {
                         RadioButton(
                             selected = uiState.outputResolution == resolution,
-                            onClick = { viewModel.setResolution(resolution) },
+                            onClick = { viewModel.setResolution(resolution) }
                         )
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { viewModel.setResolution(resolution) },
+                        .clickable { viewModel.setResolution(resolution) }
                 )
             }
         }

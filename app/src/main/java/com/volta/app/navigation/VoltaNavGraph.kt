@@ -8,12 +8,6 @@ import com.volta.app.ui.capture.CaptureScreen
 import com.volta.app.ui.export.ExportScreen
 import com.volta.app.ui.settings.SettingsScreen
 
-object Routes {
-    const val CAPTURE = "capture"
-    const val EXPORT = "export"
-    const val SETTINGS = "settings"
-}
-
 @Composable
 fun VoltaNavGraph() {
     val navController = rememberNavController()
@@ -22,20 +16,26 @@ fun VoltaNavGraph() {
         composable(Routes.CAPTURE) {
             CaptureScreen(
                 onExport = { navController.navigate(Routes.EXPORT) },
-                onSettings = { navController.navigate(Routes.SETTINGS) },
+                onSettings = { navController.navigate(Routes.SETTINGS) }
             )
         }
         composable(Routes.EXPORT) {
             ExportScreen(
                 onFinished = {
                     navController.popBackStack(Routes.CAPTURE, inclusive = false)
-                },
+                }
             )
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackStack() }
             )
         }
     }
+}
+
+object Routes {
+    const val CAPTURE = "capture"
+    const val EXPORT = "export"
+    const val SETTINGS = "settings"
 }

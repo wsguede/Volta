@@ -16,3 +16,4 @@ trim_trailing_whitespace = false
 
 [*.{kts,kt}]
 ktlint_code_style = android_studio
+ktlint_function_naming_ignore_when_annotated_with = Composable

@@ -22,7 +22,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 fun CaptureScreen(
     onExport: () -> Unit,
     onSettings: () -> Unit,
-    viewModel: CaptureViewModel = hiltViewModel(),
+    viewModel: CaptureViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -34,22 +34,22 @@ fun CaptureScreen(
                     IconButton(onClick = onSettings) {
                         Text("⚙")
                     }
-                },
+                }
             )
-        },
+        }
     ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentAlignment = Alignment.Center,
+            contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Frames: ${uiState.framesCaptured}")
                 Text("Coverage: ${"%.0f".format(uiState.coveragePercent)}%")
                 Button(
                     onClick = onExport,
-                    enabled = uiState.framesCaptured > 0,
+                    enabled = uiState.framesCaptured > 0
                 ) {
                     Text("Export")
                 }

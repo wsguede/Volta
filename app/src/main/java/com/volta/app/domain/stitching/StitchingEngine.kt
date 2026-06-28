@@ -7,11 +7,11 @@ interface StitchingEngine {
     fun stitch(
         frames: List<CapturedFrame>,
         outputWidth: Int,
-        outputHeight: Int,
+        outputHeight: Int
     ): Flow<StitchingProgress>
 }
 
 data class StitchingProgress(
     val percent: Float,
-    val result: StitchingResult? = null,
+    val result: StitchingResult? = null
 )

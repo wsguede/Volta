@@ -3,7 +3,7 @@ package com.volta.app.ui.export
 data class ExportUiState(
     val phase: ExportPhase = ExportPhase.Stitching,
     val progress: Float = 0f,
-    val errorMessage: String? = null,
+    val errorMessage: String? = null
 )
 
 sealed interface ExportPhase {
