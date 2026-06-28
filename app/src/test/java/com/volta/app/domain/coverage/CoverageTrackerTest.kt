@@ -143,6 +143,7 @@ class CoverageTrackerTest {
         val tracker = tracker()
         tracker.markCovered(DevicePose(yaw = 2 * PI, pitch = 0.0, roll = 0.0))
         assertThat(tracker.coveragePercent.value).isWithin(1e-5f).of(1f / 288f)
+        assertThat(tracker.coverageGrid.value.cells[6][0]).isTrue()
     }
 
     @Test

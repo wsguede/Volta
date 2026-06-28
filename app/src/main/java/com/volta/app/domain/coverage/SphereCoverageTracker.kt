@@ -34,6 +34,7 @@ class SphereCoverageTracker(
         }
     }
 
+    // StateFlow.value is atomic — @Synchronized is not needed for this single-field read.
     override fun isBelowWarningThreshold(threshold: Float): Boolean =
         _coveragePercent.value < threshold
 
