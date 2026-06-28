@@ -1,6 +1,8 @@
 package com.volta.app.ui.capture
 
 import android.Manifest
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -21,6 +23,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,6 +45,15 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.volta.app.ui.theme.VoltaTheme
 
+private fun Context.findComponentActivity(): ComponentActivity {
+    var ctx = this
+    while (ctx is ContextWrapper) {
+        if (ctx is ComponentActivity) return ctx
+        ctx = ctx.baseContext
+    }
+    error("No ComponentActivity found in context chain")
+}
+
 @Composable
 fun CaptureScreen(
     onExport: () -> Unit,
@@ -50,7 +62,7 @@ fun CaptureScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val activity = context as ComponentActivity
+    val activity = context.findComponentActivity()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val cameraPermissionLauncher =
@@ -61,22 +73,37 @@ fun CaptureScreen(
         }
 
     LaunchedEffect(Unit) {
-        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        val alreadyGranted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        if (alreadyGranted) {
+            viewModel.onCameraPermissionResult(granted = true, isPermanentlyDenied = false)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
     }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 val cameraGranted = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.CAMERA
+                    context, Manifest.permission.CAMERA
                 ) == PackageManager.PERMISSION_GRANTED
+                val hasBeenRequested =
+                    viewModel.uiState.value.cameraPermission != CameraPermissionState.NotRequested
                 if (cameraGranted) {
                     viewModel.onCameraPermissionResult(granted = true, isPermanentlyDenied = false)
+                } else if (hasBeenRequested) {
+                    val isPermanent = !activity.shouldShowRequestPermissionRationale(
+                        Manifest.permission.CAMERA
+                    )
+                    viewModel.onCameraPermissionResult(
+                        granted = false,
+                        isPermanentlyDenied = isPermanent
+                    )
                 }
                 val locationGranted = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.ACCESS_FINE_LOCATION
+                    context, Manifest.permission.ACCESS_FINE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED
                 viewModel.onLocationPermissionResult(locationGranted)
             }
@@ -126,28 +153,35 @@ fun CaptureContent(
                 .padding(padding)
         ) {
             when (uiState.cameraPermission) {
+                CameraPermissionState.NotRequested -> CameraStartingPlaceholder()
+                CameraPermissionState.Granted -> CaptureActiveContent(
+                    uiState = uiState,
+                    onExport = onExport
+                )
+                CameraPermissionState.Denied -> CameraPermissionDeniedCard(
+                    onOpenAppSettings = onOpenAppSettings,
+                    onRetry = onRequestCameraPermission,
+                    modifier = Modifier.align(Alignment.Center)
+                )
                 CameraPermissionState.PermanentlyDenied -> CameraPermissionDeniedCard(
                     onOpenAppSettings = onOpenAppSettings,
                     modifier = Modifier.align(Alignment.Center)
                 )
-
-                CameraPermissionState.Denied -> CameraPermissionDeniedCard(
-                    onOpenAppSettings = onOpenAppSettings,
-                    modifier = Modifier.align(Alignment.Center),
-                    showRetry = true,
-                    onRetry = onRequestCameraPermission
-                )
-
-                else -> CaptureActiveContent(
-                    uiState = uiState,
-                    onExport = onExport
-                )
             }
 
-            if (uiState.gpsStatus == CaptureGpsStatus.Unavailable) {
+            if (uiState.cameraPermission == CameraPermissionState.Granted &&
+                uiState.gpsStatus == CaptureGpsStatus.Unavailable
+            ) {
                 GpsUnavailableBanner(modifier = Modifier.align(Alignment.TopCenter))
             }
         }
+    }
+}
+
+@Composable
+private fun CameraStartingPlaceholder() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text("Starting camera…", style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -182,8 +216,7 @@ private fun CaptureActiveContent(uiState: CaptureUiState, onExport: () -> Unit) 
 private fun CameraPermissionDeniedCard(
     onOpenAppSettings: () -> Unit,
     modifier: Modifier = Modifier,
-    showRetry: Boolean = false,
-    onRetry: () -> Unit = {}
+    onRetry: (() -> Unit)? = null
 ) {
     Card(
         modifier = modifier.padding(24.dp),
@@ -203,14 +236,12 @@ private fun CameraPermissionDeniedCard(
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(modifier = Modifier.height(16.dp))
-            if (showRetry) {
-                Button(onClick = onRetry) {
-                    Text("Grant Permission")
-                }
+            if (onRetry != null) {
+                Button(onClick = onRetry) { Text("Grant Permission") }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(onClick = onOpenAppSettings) { Text("Open Settings") }
             } else {
-                Button(onClick = onOpenAppSettings) {
-                    Text("Open Settings")
-                }
+                Button(onClick = onOpenAppSettings) { Text("Open Settings") }
             }
         }
     }
@@ -236,7 +267,35 @@ private fun GpsUnavailableBanner(modifier: Modifier = Modifier) {
 fun PreviewCaptureContent() {
     VoltaTheme {
         CaptureContent(
-            uiState = CaptureUiState(framesCaptured = 42, coveragePercent = 73.5f),
+            uiState = CaptureUiState(
+                cameraPermission = CameraPermissionState.Granted,
+                framesCaptured = 42,
+                coveragePercent = 73.5f
+            ),
+            onExport = {},
+            onSettings = {}
+        )
+    }
+}
+
+@Preview
+@Composable
+fun PreviewCaptureContentNotRequested() {
+    VoltaTheme {
+        CaptureContent(
+            uiState = CaptureUiState(),
+            onExport = {},
+            onSettings = {}
+        )
+    }
+}
+
+@Preview
+@Composable
+fun PreviewCaptureContentDenied() {
+    VoltaTheme {
+        CaptureContent(
+            uiState = CaptureUiState(cameraPermission = CameraPermissionState.Denied),
             onExport = {},
             onSettings = {}
         )
@@ -261,6 +320,7 @@ fun PreviewCaptureContentGpsUnavailable() {
     VoltaTheme {
         CaptureContent(
             uiState = CaptureUiState(
+                cameraPermission = CameraPermissionState.Granted,
                 framesCaptured = 5,
                 coveragePercent = 20f,
                 gpsStatus = CaptureGpsStatus.Unavailable
