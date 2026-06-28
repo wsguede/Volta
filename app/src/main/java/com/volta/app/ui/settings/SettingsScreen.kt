@@ -15,15 +15,30 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.volta.app.domain.stitching.OutputResolution
+import com.volta.app.ui.theme.VoltaTheme
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    SettingsContent(
+        uiState = uiState,
+        onBack = onBack,
+        onResolutionSelected = viewModel::setResolution
+    )
+}
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsContent(
+    uiState: SettingsUiState,
+    onBack: () -> Unit,
+    onResolutionSelected: (OutputResolution) -> Unit
+) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -43,26 +58,38 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
         ) {
             Text(
                 text = "Output Resolution",
-                modifier = Modifier.padding(padding)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
             OutputResolution.entries.forEach { resolution ->
+                val label = resolution.name.lowercase()
+                    .replaceFirstChar { it.uppercase() }
                 ListItem(
                     headlineContent = {
-                        val label = resolution.name.lowercase()
-                            .replaceFirstChar { it.uppercase() }
                         Text("$label (${resolution.width} × ${resolution.height})")
                     },
                     leadingContent = {
                         RadioButton(
                             selected = uiState.outputResolution == resolution,
-                            onClick = { viewModel.setResolution(resolution) }
+                            onClick = { onResolutionSelected(resolution) }
                         )
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { viewModel.setResolution(resolution) }
+                        .clickable { onResolutionSelected(resolution) }
                 )
             }
         }
+    }
+}
+
+@Preview
+@Composable
+fun PreviewSettingsContent() {
+    VoltaTheme {
+        SettingsContent(
+            uiState = SettingsUiState(),
+            onBack = {},
+            onResolutionSelected = {}
+        )
     }
 }

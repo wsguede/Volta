@@ -14,10 +14,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.volta.app.ui.theme.VoltaTheme
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CaptureScreen(
     onExport: () -> Unit,
@@ -25,7 +26,16 @@ fun CaptureScreen(
     viewModel: CaptureViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    CaptureContent(
+        uiState = uiState,
+        onExport = onExport,
+        onSettings = onSettings
+    )
+}
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CaptureContent(uiState: CaptureUiState, onExport: () -> Unit, onSettings: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -55,5 +65,17 @@ fun CaptureScreen(
                 }
             }
         }
+    }
+}
+
+@Preview
+@Composable
+fun PreviewCaptureContent() {
+    VoltaTheme {
+        CaptureContent(
+            uiState = CaptureUiState(framesCaptured = 42, coveragePercent = 73.5f),
+            onExport = {},
+            onSettings = {}
+        )
     }
 }

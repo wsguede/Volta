@@ -121,10 +121,11 @@ detekt {
     allRules = false
 }
 
+// Format: YYYY_MMM_MMM — year * 100_000 + month * 1_000 + micro (up to 999 releases/month)
 fun generateVersionCode(): Int {
     val today = LocalDate.now()
     val micro = project.findProperty("VERSION_MICRO")?.toString()?.toIntOrNull() ?: 0
-    return today.year * 10000 + today.monthValue * 100 + micro
+    return today.year * 100_000 + today.monthValue * 1_000 + micro
 }
 
 fun generateVersionName(): String {

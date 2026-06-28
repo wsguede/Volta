@@ -12,14 +12,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.volta.app.ui.theme.VoltaTheme
 
 @Composable
 fun ExportScreen(onFinished: () -> Unit, viewModel: ExportViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    ExportContent(uiState = uiState, onFinished = onFinished)
+}
 
+@Composable
+fun ExportContent(uiState: ExportUiState, onFinished: () -> Unit) {
     Scaffold { padding ->
         Column(
             modifier = Modifier
@@ -52,5 +58,27 @@ fun ExportScreen(onFinished: () -> Unit, viewModel: ExportViewModel = hiltViewMo
                 }
             }
         }
+    }
+}
+
+@Preview
+@Composable
+fun PreviewExportContentStitching() {
+    VoltaTheme {
+        ExportContent(
+            uiState = ExportUiState(phase = ExportPhase.Stitching, progress = 0.6f),
+            onFinished = {}
+        )
+    }
+}
+
+@Preview
+@Composable
+fun PreviewExportContentComplete() {
+    VoltaTheme {
+        ExportContent(
+            uiState = ExportUiState(phase = ExportPhase.Complete),
+            onFinished = {}
+        )
     }
 }

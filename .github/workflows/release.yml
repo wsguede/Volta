@@ -56,11 +56,11 @@ jobs:
         if: steps.check_tag.outputs.exists == 'false'
         id: changelog
         run: |
-          # Find the previous release tag
-          PREV_TAG=$(git tag --sort=-v:refname --list 'v*' | head -n 1)
+          # Find the previous release tag, excluding the tag about to be created
+          CURRENT_TAG="${{ steps.version.outputs.tag }}"
+          PREV_TAG=$(git tag --sort=-v:refname --list 'v*' | grep -v "^${CURRENT_TAG}$" | head -n 1)
 
           if [ -z "$PREV_TAG" ]; then
-            # First release — changelog from all commits
             RANGE="HEAD"
           else
             RANGE="${PREV_TAG}..HEAD"
