@@ -23,6 +23,7 @@ class SphereCoverageTracker(
     private val _coverageGrid = MutableStateFlow(buildGrid())
     override val coverageGrid: StateFlow<CoverageGrid> = _coverageGrid.asStateFlow()
 
+    @Synchronized
     override fun markCovered(pose: DevicePose) {
         val (col, row) = poseToCell(pose)
         if (!coveredCells[row][col]) {
@@ -33,8 +34,10 @@ class SphereCoverageTracker(
         }
     }
 
-    override fun isBelowWarningThreshold(): Boolean = _coveragePercent.value < WARNING_THRESHOLD
+    override fun isBelowWarningThreshold(threshold: Float): Boolean =
+        _coveragePercent.value < threshold
 
+    @Synchronized
     override fun reset() {
         for (row in coveredCells) row.fill(false)
         coveredCount = 0
@@ -60,6 +63,5 @@ class SphereCoverageTracker(
     companion object {
         const val DEFAULT_COLUMNS = 24
         const val DEFAULT_ROWS = 12
-        const val WARNING_THRESHOLD = 0.8f
     }
 }
