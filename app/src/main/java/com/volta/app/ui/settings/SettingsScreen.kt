@@ -47,7 +47,11 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
             )
             OutputResolution.entries.forEach { resolution ->
                 ListItem(
-                    headlineContent = { Text(resolution.label) },
+                    headlineContent = {
+                        val label = resolution.name.lowercase()
+                            .replaceFirstChar { it.uppercase() }
+                        Text("$label (${resolution.width} × ${resolution.height})")
+                    },
                     leadingContent = {
                         RadioButton(
                             selected = uiState.outputResolution == resolution,
