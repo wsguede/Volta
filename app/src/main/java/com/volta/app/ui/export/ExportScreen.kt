@@ -2,12 +2,17 @@ package com.volta.app.ui.export
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -21,12 +26,17 @@ import com.volta.app.ui.theme.VoltaTheme
 @Composable
 fun ExportScreen(onFinished: () -> Unit, viewModel: ExportViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    ExportContent(uiState = uiState, onFinished = onFinished)
+    ExportContent(uiState = uiState, onFinished = onFinished, onCancel = onFinished)
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExportContent(uiState: ExportUiState, onFinished: () -> Unit) {
-    Scaffold { padding ->
+fun ExportContent(uiState: ExportUiState, onFinished: () -> Unit, onCancel: () -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("Export") })
+        }
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -39,10 +49,18 @@ fun ExportContent(uiState: ExportUiState, onFinished: () -> Unit) {
                 ExportPhase.Stitching -> {
                     Text("Stitching photosphere...")
                     LinearProgressIndicator(progress = { uiState.progress })
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedButton(onClick = onCancel) {
+                        Text("Cancel")
+                    }
                 }
                 ExportPhase.SavingToGallery -> {
                     Text("Saving to photo library...")
                     LinearProgressIndicator()
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedButton(onClick = onCancel) {
+                        Text("Cancel")
+                    }
                 }
                 ExportPhase.Complete -> {
                     Text("Photosphere exported!")
@@ -67,7 +85,8 @@ fun PreviewExportContentStitching() {
     VoltaTheme {
         ExportContent(
             uiState = ExportUiState(phase = ExportPhase.Stitching, progress = 0.6f),
-            onFinished = {}
+            onFinished = {},
+            onCancel = {}
         )
     }
 }
@@ -78,7 +97,8 @@ fun PreviewExportContentComplete() {
     VoltaTheme {
         ExportContent(
             uiState = ExportUiState(phase = ExportPhase.Complete),
-            onFinished = {}
+            onFinished = {},
+            onCancel = {}
         )
     }
 }

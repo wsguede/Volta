@@ -56,7 +56,13 @@ fun CaptureContent(uiState: CaptureUiState, onExport: () -> Unit, onSettings: ()
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Frames: ${uiState.framesCaptured}")
-                Text("Coverage: ${"%.0f".format(uiState.coveragePercent)}%")
+                Text(
+                    "Coverage: ${String.format(
+                        java.util.Locale.US,
+                        "%.0f",
+                        uiState.coveragePercent
+                    )}%"
+                )
                 Button(
                     onClick = onExport,
                     enabled = uiState.framesCaptured > 0
