@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
+import androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -53,13 +54,18 @@ fun CaptureScreen(
     val context = LocalContext.current
     val activity = context.findComponentActivity()
 
-    val cameraLauncher = rememberLauncherForActivityResult(RequestPermission()) { granted ->
-        val isPermanent = !granted &&
+    val permissionsLauncher = rememberLauncherForActivityResult(
+        RequestMultiplePermissions()
+    ) { results ->
+        val cameraGranted = results[Manifest.permission.CAMERA] == true
+        val locationGranted = results[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val isPermanent = !cameraGranted &&
             !activity.shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)
-        viewModel.onCameraPermissionResult(granted = granted, isPermanentlyDenied = isPermanent)
-    }
-    val locationLauncher = rememberLauncherForActivityResult(RequestPermission()) { granted ->
-        viewModel.onLocationPermissionResult(granted)
+        viewModel.onCameraPermissionResult(
+            granted = cameraGranted,
+            isPermanentlyDenied = isPermanent
+        )
+        viewModel.onLocationPermissionResult(locationGranted)
     }
 
     LaunchedEffect(Unit) {
@@ -70,24 +76,35 @@ fun CaptureScreen(
             context, Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
         if (cameraGranted) {
-            viewModel.onCameraPermissionResult(true, isPermanentlyDenied = false)
-        } else {
-            cameraLauncher.launch(Manifest.permission.CAMERA)
+            viewModel.onCameraPermissionResult(granted = true, isPermanentlyDenied = false)
         }
         if (locationGranted) {
-            viewModel.onLocationPermissionResult(true)
-        } else {
-            locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            viewModel.onLocationPermissionResult(granted = true)
+        }
+        val toRequest = buildList {
+            if (!cameraGranted) add(Manifest.permission.CAMERA)
+            if (!locationGranted) add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+        if (toRequest.isNotEmpty()) {
+            permissionsLauncher.launch(toRequest.toTypedArray())
         }
     }
 
-    PermissionsResumeObserver(activity = activity, context = context, viewModel = viewModel)
+    PermissionsResumeObserver(
+        activity = activity,
+        context = context,
+        cameraPermission = uiState.cameraPermission,
+        onCameraPermissionResult = viewModel::onCameraPermissionResult,
+        onLocationPermissionResult = viewModel::onLocationPermissionResult
+    )
 
     CaptureContent(
         uiState = uiState,
         onExport = onExport,
         onSettings = onSettings,
-        onRequestCameraPermission = { cameraLauncher.launch(Manifest.permission.CAMERA) },
+        onRequestCameraPermission = {
+            permissionsLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+        },
         onOpenAppSettings = { context.openAppSettings() }
     )
 }
@@ -96,9 +113,14 @@ fun CaptureScreen(
 private fun PermissionsResumeObserver(
     activity: ComponentActivity,
     context: Context,
-    viewModel: CaptureViewModel
+    cameraPermission: CapturePermissionState,
+    onCameraPermissionResult: (granted: Boolean, isPermanentlyDenied: Boolean) -> Unit,
+    onLocationPermissionResult: (granted: Boolean) -> Unit
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    val currentCameraPermission = rememberUpdatedState(cameraPermission)
+    val currentOnCamera = rememberUpdatedState(onCameraPermissionResult)
+    val currentOnLocation = rememberUpdatedState(onLocationPermissionResult)
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -106,22 +128,19 @@ private fun PermissionsResumeObserver(
                     context, Manifest.permission.CAMERA
                 ) == PackageManager.PERMISSION_GRANTED
                 val hasBeenRequested =
-                    viewModel.uiState.value.cameraPermission != CapturePermissionState.NotRequested
+                    currentCameraPermission.value != CapturePermissionState.NotRequested
                 if (cameraGranted) {
-                    viewModel.onCameraPermissionResult(granted = true, isPermanentlyDenied = false)
+                    currentOnCamera.value(true, false)
                 } else if (hasBeenRequested) {
                     val isPermanent = !activity.shouldShowRequestPermissionRationale(
                         Manifest.permission.CAMERA
                     )
-                    viewModel.onCameraPermissionResult(
-                        granted = false,
-                        isPermanentlyDenied = isPermanent
-                    )
+                    currentOnCamera.value(false, isPermanent)
                 }
                 val locationGranted = ContextCompat.checkSelfPermission(
                     context, Manifest.permission.ACCESS_FINE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED
-                viewModel.onLocationPermissionResult(locationGranted)
+                currentOnLocation.value(locationGranted)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
