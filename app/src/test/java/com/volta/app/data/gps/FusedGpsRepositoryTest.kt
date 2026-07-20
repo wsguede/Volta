@@ -4,6 +4,7 @@ import android.location.Location
 import android.os.Looper
 import app.cash.turbine.test
 import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationAvailability
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
@@ -147,6 +148,32 @@ class FusedGpsRepositoryTest {
             callbackSlot.captured.onLocationResult(locationResult(null))
 
             assertThat(awaitItem()).isNull()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `emits null when location availability reports unavailable`() = runTest {
+        repository(permissionGranted = true).location.test {
+            runCurrent()
+            val availability = mockk<LocationAvailability>()
+            every { availability.isLocationAvailable } returns false
+            callbackSlot.captured.onLocationAvailability(availability)
+
+            assertThat(awaitItem()).isNull()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `does not emit when location availability reports available`() = runTest {
+        repository(permissionGranted = true).location.test {
+            runCurrent()
+            val availability = mockk<LocationAvailability>()
+            every { availability.isLocationAvailable } returns true
+            callbackSlot.captured.onLocationAvailability(availability)
+
+            expectNoEvents()
             cancelAndIgnoreRemainingEvents()
         }
     }

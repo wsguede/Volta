@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.location.Location
 import android.os.Looper
 import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationAvailability
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
@@ -32,6 +33,12 @@ class FusedGpsRepository @Inject constructor(
         val callback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 trySend(result.lastLocation?.toGpsCoordinates())
+            }
+
+            override fun onLocationAvailability(availability: LocationAvailability) {
+                if (!availability.isLocationAvailable) {
+                    trySend(null)
+                }
             }
         }
 
