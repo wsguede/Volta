@@ -19,4 +19,4 @@ Use Google Play Services Location (`com.google.android.gms:play-services-locatio
 - Lower battery impact than raw GPS polling — the fused provider manages sensor duty-cycling automatically.
 - Requires Google Play Services on the device. ARCore already requires Play Services, so this adds no new device compatibility constraint.
 - GPS remains optional per the PRD — if Play Services is unavailable or the user denies permission, the app proceeds without coordinates and embeds no EXIF location data.
-- The `LocationRepository` interface abstracts the provider, so swapping to `LocationManager` for Play Services-free builds is a single implementation change.
+- The `GpsRepository` interface abstracts the provider, so swapping to `LocationManager` for Play Services-free builds is a single implementation change.
