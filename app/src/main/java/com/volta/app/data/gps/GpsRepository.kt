@@ -5,10 +5,15 @@ import kotlinx.coroutines.flow.Flow
 
 interface GpsRepository {
     /**
-     * Emits `null` when permission is denied, no fix is available, location services are
-     * unavailable, or the fix's horizontal accuracy is worse than
-     * [GpsCoordinates.MAX_ACCEPTABLE_HORIZONTAL_ACCURACY_METERS]. Consumers should proceed
-     * without location rather than block on this flow.
+     * Hot, shared stream of the best available GPS fix (replay 1, one upstream GPS
+     * subscription regardless of collector count).
+     *
+     * Emits `null` immediately on subscription, then the latest fix whose horizontal accuracy
+     * is at most [GpsCoordinates.MAX_ACCEPTABLE_HORIZONTAL_ACCURACY_METERS]. A degraded or lost
+     * signal never erases the last acceptable fix while the stream stays active. While location
+     * permission is denied the stream stays at `null` and recovers automatically once permission
+     * is granted — no re-collection needed. Consumers embed the latest value at export time and
+     * proceed without location rather than block waiting for a fix.
      */
     val location: Flow<GpsCoordinates?>
 }

@@ -16,6 +16,8 @@ import io.mockk.mockkStatic
 import io.mockk.slot
 import io.mockk.unmockkStatic
 import io.mockk.verify
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -43,11 +45,13 @@ class FusedGpsRepositoryTest {
         unmockkStatic(Looper::class)
     }
 
-    private fun repository(permissionGranted: Boolean) = FusedGpsRepository(
-        fusedLocationClient = fusedClient,
-        locationRequest = locationRequest,
-        permissionChecker = { permissionGranted }
-    )
+    private fun TestScope.repository(permissionChecker: LocationPermissionChecker) =
+        FusedGpsRepository(
+            fusedLocationClient = fusedClient,
+            locationRequest = locationRequest,
+            permissionChecker = permissionChecker,
+            applicationScope = backgroundScope
+        )
 
     private fun mockLocation(
         lat: Double = 47.6062,
@@ -70,18 +74,25 @@ class FusedGpsRepositoryTest {
         return result
     }
 
+    private fun availability(available: Boolean): LocationAvailability {
+        val availability = mockk<LocationAvailability>()
+        every { availability.isLocationAvailable } returns available
+        return availability
+    }
+
     @Test
-    fun `emits null when permission is denied`() = runTest {
-        repository(permissionGranted = false).location.test {
+    fun `emits null immediately when permission is denied`() = runTest {
+        repository { false }.location.test {
             assertThat(awaitItem()).isNull()
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `does not register for updates when permission is denied`() = runTest {
-        repository(permissionGranted = false).location.test {
+    fun `does not register for updates while permission is denied`() = runTest {
+        repository { false }.location.test {
             awaitItem()
+            advanceTimeBy(3_000)
             cancelAndIgnoreRemainingEvents()
         }
         verify(exactly = 0) {
@@ -94,84 +105,75 @@ class FusedGpsRepositoryTest {
     }
 
     @Test
-    fun `emits mapped coordinates for an accurate fix with altitude`() = runTest {
-        repository(permissionGranted = true).location.test {
+    fun `recovers and emits fixes after permission is granted mid-collection`() = runTest {
+        var granted = false
+        repository { granted }.location.test {
+            assertThat(awaitItem()).isNull()
+
+            granted = true
+            advanceTimeBy(1_001)
             runCurrent()
             callbackSlot.captured.onLocationResult(
-                locationResult(mockLocation(horizontalAccuracy = 10f, altitudeMeters = 56.4))
+                locationResult(mockLocation(horizontalAccuracy = 10f))
             )
 
-            val coordinates = awaitItem()
-
-            assertThat(coordinates).isEqualTo(
-                GpsCoordinates(
-                    latitude = 47.6062,
-                    longitude = -122.3321,
-                    altitude = 56.4,
-                    accuracyMeters = 10f
-                )
-            )
+            assertThat(awaitItem()).isNotNull()
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
+    fun `emits null immediately then mapped coordinates for an accurate fix with altitude`() =
+        runTest {
+            repository { true }.location.test {
+                assertThat(awaitItem()).isNull()
+                runCurrent()
+                callbackSlot.captured.onLocationResult(
+                    locationResult(mockLocation(horizontalAccuracy = 10f, altitudeMeters = 56.4))
+                )
+
+                assertThat(awaitItem()).isEqualTo(
+                    GpsCoordinates(
+                        latitude = 47.6062,
+                        longitude = -122.3321,
+                        altitude = 56.4,
+                        accuracyMeters = 10f
+                    )
+                )
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
     fun `emits coordinates with null altitude when fix has no altitude`() = runTest {
-        repository(permissionGranted = true).location.test {
+        repository { true }.location.test {
+            assertThat(awaitItem()).isNull()
             runCurrent()
             callbackSlot.captured.onLocationResult(
                 locationResult(mockLocation(altitudeMeters = null))
             )
 
-            assertThat(awaitItem()?.altitude).isNull()
+            val coordinates = awaitItem()
+            assertThat(coordinates).isNotNull()
+            assertThat(coordinates?.altitude).isNull()
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `emits null for a fix with accuracy worse than the threshold`() = runTest {
-        repository(permissionGranted = true).location.test {
+    fun `retains last acceptable fix when a degraded fix arrives`() = runTest {
+        repository { true }.location.test {
+            assertThat(awaitItem()).isNull()
             runCurrent()
             callbackSlot.captured.onLocationResult(
-                locationResult(mockLocation(horizontalAccuracy = 51f))
+                locationResult(mockLocation(horizontalAccuracy = 10f))
             )
+            val goodFix = awaitItem()
+            assertThat(goodFix).isNotNull()
 
-            assertThat(awaitItem()).isNull()
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `emits null when the result has no location`() = runTest {
-        repository(permissionGranted = true).location.test {
-            runCurrent()
-            callbackSlot.captured.onLocationResult(locationResult(null))
-
-            assertThat(awaitItem()).isNull()
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `emits null when location availability reports unavailable`() = runTest {
-        repository(permissionGranted = true).location.test {
-            runCurrent()
-            val availability = mockk<LocationAvailability>()
-            every { availability.isLocationAvailable } returns false
-            callbackSlot.captured.onLocationAvailability(availability)
-
-            assertThat(awaitItem()).isNull()
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `does not emit when location availability reports available`() = runTest {
-        repository(permissionGranted = true).location.test {
-            runCurrent()
-            val availability = mockk<LocationAvailability>()
-            every { availability.isLocationAvailable } returns true
-            callbackSlot.captured.onLocationAvailability(availability)
+            callbackSlot.captured.onLocationResult(
+                locationResult(mockLocation(lat = 1.0, lon = 2.0, horizontalAccuracy = 51f))
+            )
 
             expectNoEvents()
             cancelAndIgnoreRemainingEvents()
@@ -179,12 +181,92 @@ class FusedGpsRepositoryTest {
     }
 
     @Test
-    fun `unregisters the callback when collection stops`() = runTest {
-        repository(permissionGranted = true).location.test {
+    fun `retains last acceptable fix when location availability is lost`() = runTest {
+        repository { true }.location.test {
+            assertThat(awaitItem()).isNull()
             runCurrent()
+            callbackSlot.captured.onLocationResult(
+                locationResult(mockLocation(horizontalAccuracy = 10f))
+            )
+            assertThat(awaitItem()).isNotNull()
+
+            callbackSlot.captured.onLocationAvailability(availability(available = false))
+
+            expectNoEvents()
             cancelAndIgnoreRemainingEvents()
         }
-        runCurrent()
-        verify { fusedClient.removeLocationUpdates(callbackSlot.captured) }
     }
+
+    @Test
+    fun `stays null when availability is lost before any fix`() = runTest {
+        repository { true }.location.test {
+            assertThat(awaitItem()).isNull()
+            runCurrent()
+            callbackSlot.captured.onLocationAvailability(availability(available = false))
+
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `stays null when the result has no location`() = runTest {
+        repository { true }.location.test {
+            assertThat(awaitItem()).isNull()
+            runCurrent()
+            callbackSlot.captured.onLocationResult(locationResult(null))
+
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `late subscriber immediately receives the latest fix without a new registration`() =
+        runTest {
+            val repo = repository { true }
+            repo.location.test {
+                assertThat(awaitItem()).isNull()
+                runCurrent()
+                callbackSlot.captured.onLocationResult(
+                    locationResult(mockLocation(horizontalAccuracy = 10f))
+                )
+                assertThat(awaitItem()).isNotNull()
+                cancelAndIgnoreRemainingEvents()
+            }
+
+            repo.location.test {
+                assertThat(awaitItem()).isEqualTo(
+                    GpsCoordinates(
+                        latitude = 47.6062,
+                        longitude = -122.3321,
+                        altitude = null,
+                        accuracyMeters = 10f
+                    )
+                )
+                cancelAndIgnoreRemainingEvents()
+            }
+            verify(exactly = 1) {
+                fusedClient.requestLocationUpdates(
+                    any<LocationRequest>(),
+                    any<LocationCallback>(),
+                    any()
+                )
+            }
+        }
+
+    @Test
+    fun `unregisters the callback after subscribers leave and the stop timeout elapses`() =
+        runTest {
+            repository { true }.location.test {
+                awaitItem()
+                runCurrent()
+                cancelAndIgnoreRemainingEvents()
+            }
+
+            advanceTimeBy(5_001)
+            runCurrent()
+
+            verify { fusedClient.removeLocationUpdates(callbackSlot.captured) }
+        }
 }
