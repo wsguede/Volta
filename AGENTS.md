@@ -75,7 +75,7 @@ Dependencies are managed via the Gradle version catalog at `gradle/libs.versions
 
 | Layer | Responsibility | Allowed dependencies |
 |---|---|---|
-| `ui/` | Composables and ViewModels | `domain/`, `data/` repository interfaces (constructor-injected via Hilt), Android framework |
+| `ui/` | Composables and ViewModels | `domain/`, Android framework |
 | `domain/` | Business logic (capture, coverage, stitching) | Kotlin stdlib + kotlinx-coroutines only — no Android imports |
 | `data/` | Camera, ARCore, GPS, file system access | Android framework, external SDKs |
 | `di/` | Hilt modules | All layers |
