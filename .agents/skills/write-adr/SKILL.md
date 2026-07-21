@@ -1,3 +1,14 @@
+---
+name: write-adr
+description: >
+  Create an Architecture Decision Record documenting the why behind a technical choice, following
+  Volta's ADR template and numbering in docs/adr/. Use this whenever a new dependency is being
+  added, an architecture pattern is changing, or a choice is being made between two significant
+  implementation approaches — including proactively, when you're about to make a decision like
+  this yourself. Also use when the user asks things like "should we write an ADR for this",
+  "document this decision", or "why did we pick X over Y".
+---
+
 # write-adr
 
 Create an Architecture Decision Record following the project template.
@@ -28,4 +39,4 @@ Create an Architecture Decision Record following the project template.
 
 - ADR file created in `docs/adr/` with correct numbering
 - Any superseded ADRs updated
-- ADR referenced in the PR body if part of a feature branch
+- If part of a feature branch, the "ADR written" box is checked when the PR is opened via `create-pr`
