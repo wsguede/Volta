@@ -7,9 +7,11 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Qualifier
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import timber.log.Timber
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
@@ -38,7 +40,10 @@ object AppModule {
     @Provides
     @Singleton
     @ApplicationScope
-    fun provideApplicationScope(
-        @DefaultDispatcher dispatcher: CoroutineDispatcher
-    ): CoroutineScope = CoroutineScope(SupervisorJob() + dispatcher)
+    fun provideApplicationScope(@IoDispatcher dispatcher: CoroutineDispatcher): CoroutineScope {
+        val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+            Timber.e(throwable, "Unhandled exception in an application-scoped coroutine")
+        }
+        return CoroutineScope(SupervisorJob() + dispatcher + exceptionHandler)
+    }
 }

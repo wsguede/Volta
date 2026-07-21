@@ -37,6 +37,7 @@ abstract class LocationModule {
         ): FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(context)
 
         @Provides
+        @Singleton
         fun provideLocationRequest(): LocationRequest =
             LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, UPDATE_INTERVAL_MS).build()
 
