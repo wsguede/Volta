@@ -31,3 +31,6 @@ Thumbs.db
 *.keystore
 *.jks
 google-services.json
+
+# Superpowers skill
+docs/superpowers/
