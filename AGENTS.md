@@ -126,7 +126,9 @@ config/
 └── detekt/
     └── detekt.yml                    # Detekt static analysis config
 docs/
-└── adr/                              # Architecture Decision Records
+├── adr/                              # Architecture Decision Records
+└── superpowers/
+    └── plans/                        # Point-in-time implementation plans (historical snapshots — code is authoritative, plans are not updated after merge)
 gradle/
 ├── libs.versions.toml                # Version catalog (single source for all dependency versions)
 └── wrapper/                          # Gradle wrapper (always use ./gradlew)
