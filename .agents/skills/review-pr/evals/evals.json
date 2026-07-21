@@ -1,0 +1,29 @@
+{
+  "skill_name": "review-pr",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Review PR #23 (feat(gps): add GPS location data source) using the review-pr skill.",
+      "expected_output": "Dispatches android-reviewer and architect subagents in parallel against the real PR #23 diff, merges their findings into one deduplicated report organized by severity, and (in the real, non-test flow) posts it as a PR comment since a PR number was explicitly given.",
+      "files": [],
+      "assertions": [
+        "Both android-reviewer and architect were actually invoked as separate subagents (raw output files are non-empty and distinct from each other)",
+        "Merged report uses severity structure (## Critical / ## Warnings / ## Suggestions) rather than being a raw concatenation of the two raw files",
+        "No real GitHub comment was posted to PR #23 (dry-run respected)",
+        "A drafted PR-comment file exists and is non-empty"
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "Review my branch (checked out to feature/sphere-coverage-tracker-12) against main using the review-pr skill.",
+      "expected_output": "Since no PR number was given, checks for an open PR on the branch, finds only a MERGED one, and correctly falls through to local-diff mode without asking for confirmation. Dispatches both reviewer subagents in parallel against the real branch diff, merges findings, and shows the report in conversation only — no GitHub post.",
+      "files": [],
+      "assertions": [
+        "Skill correctly detected the branch's PR as MERGED and did not pause for confirmation",
+        "Both subagents were invoked and their findings appear merged/deduplicated in the final report",
+        "Output is conversation-only — no GitHub post attempted",
+        "Worktree was cleaned up afterward (no leftover git worktree entries)"
+      ]
+    }
+  ]
+}
