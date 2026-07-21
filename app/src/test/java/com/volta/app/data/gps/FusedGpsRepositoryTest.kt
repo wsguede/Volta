@@ -256,6 +256,65 @@ class FusedGpsRepositoryTest {
         }
 
     @Test
+    fun `stops updates and re-registers when permission is revoked then re-granted`() = runTest {
+        var granted = true
+        repository { granted }.location.test {
+            assertThat(awaitItem()).isNull()
+            runCurrent()
+            callbackSlot.captured.onLocationResult(
+                locationResult(mockLocation(horizontalAccuracy = 10f))
+            )
+            val goodFix = awaitItem()
+            assertThat(goodFix).isNotNull()
+
+            granted = false
+            advanceTimeBy(1_001)
+            runCurrent()
+
+            verify { fusedClient.removeLocationUpdates(any<LocationCallback>()) }
+            expectNoEvents()
+
+            granted = true
+            advanceTimeBy(1_001)
+            runCurrent()
+
+            callbackSlot.captured.onLocationResult(
+                locationResult(mockLocation(lat = 1.0, lon = 2.0, horizontalAccuracy = 10f))
+            )
+            val newFix = awaitItem()
+            assertThat(newFix).isNotEqualTo(goodFix)
+
+            cancelAndIgnoreRemainingEvents()
+        }
+        verify(exactly = 2) {
+            fusedClient.requestLocationUpdates(
+                any<LocationRequest>(),
+                any<LocationCallback>(),
+                any()
+            )
+        }
+    }
+
+    @Test
+    fun `emits null and does not crash when requestLocationUpdates throws SecurityException`() =
+        runTest {
+            every {
+                fusedClient.requestLocationUpdates(
+                    any<LocationRequest>(),
+                    any<LocationCallback>(),
+                    any()
+                )
+            } throws SecurityException("permission revoked before registration")
+
+            repository { true }.location.test {
+                assertThat(awaitItem()).isNull()
+                runCurrent()
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
     fun `unregisters the callback after subscribers leave and the stop timeout elapses`() =
         runTest {
             repository { true }.location.test {

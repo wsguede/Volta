@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 class FusedGpsRepository @Inject constructor(
@@ -34,8 +36,10 @@ class FusedGpsRepository @Inject constructor(
 ) : GpsRepository {
 
     override val location: Flow<GpsCoordinates?> = flow {
-        awaitFineLocationPermission()
-        emitAll(acceptableFixes())
+        while (true) {
+            awaitFineLocationPermission()
+            emitAll(acceptableFixesWhilePermitted())
+        }
     }
         .scan(null as GpsCoordinates?) { lastAcceptableFix, newFix -> newFix ?: lastAcceptableFix }
         .distinctUntilChanged()
@@ -55,26 +59,61 @@ class FusedGpsRepository @Inject constructor(
     }
 
     @SuppressLint("MissingPermission")
-    private fun acceptableFixes(): Flow<GpsCoordinates?> = callbackFlow {
+    private fun acceptableFixesWhilePermitted(): Flow<GpsCoordinates?> = callbackFlow {
         val callback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 trySend(result.lastLocation?.toGpsCoordinates())
             }
 
             override fun onLocationAvailability(availability: LocationAvailability) {
+                // A true (recovered) signal carries no fix of its own — recovery is reported
+                // separately via onLocationResult, so this branch is a deliberate no-op.
                 if (!availability.isLocationAvailable) {
                     trySend(null)
                 }
             }
         }
 
-        fusedLocationClient.requestLocationUpdates(
-            locationRequest,
-            callback,
-            Looper.getMainLooper()
-        )
+        // requestLocationUpdates performs its own synchronous permission check and throws
+        // SecurityException if permission isn't actually held at call time (a TOCTOU race with
+        // awaitFineLocationPermission's check). Treat that exactly like a revoke: emit null, back
+        // off, and let the outer loop re-enter permission recovery instead of crashing.
+        val registered = try {
+            fusedLocationClient.requestLocationUpdates(
+                locationRequest,
+                callback,
+                Looper.getMainLooper()
+            )
+            true
+        } catch (permissionRevoked: SecurityException) {
+            Timber.w(permissionRevoked, "Location permission revoked before registration")
+            trySend(null)
+            delay(PERMISSION_RECHECK_INTERVAL_MS)
+            close()
+            false
+        }
 
-        awaitClose { fusedLocationClient.removeLocationUpdates(callback) }
+        val permissionWatcher = if (registered) {
+            launch {
+                while (isActive) {
+                    delay(PERMISSION_RECHECK_INTERVAL_MS)
+                    if (!permissionChecker.hasFineLocationPermission()) {
+                        Timber.w("Fine location permission revoked mid-collection")
+                        close()
+                        break
+                    }
+                }
+            }
+        } else {
+            null
+        }
+
+        awaitClose {
+            permissionWatcher?.cancel()
+            if (registered) {
+                fusedLocationClient.removeLocationUpdates(callback)
+            }
+        }
     }.conflate()
 
     private fun Location.toGpsCoordinates(): GpsCoordinates? = GpsCoordinates(
