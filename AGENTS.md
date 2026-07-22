@@ -56,7 +56,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | JDK | 17 | CI uses Temurin; local JDK version may differ |
 | Gradle | 9.6.1 | Via included wrapper (`./gradlew`) — always use the wrapper |
 | Android SDK | API 37 (`compileSdk`), API 35 (`targetSdk`) | `compileSdk` and `targetSdk` are tracked separately |
-| Kotlin | 2.4.10 | Built into AGP 9+; no `org.jetbrains.kotlin.android` plugin needed, only the Compose compiler plugin |
+| Kotlin | 2.4.0 | Built into AGP 9+; no `org.jetbrains.kotlin.android` plugin needed, only the Compose compiler plugin. Pinned to 2.4.0 (not the latest 2.4.10) because CodeQL's Kotlin extractor doesn't yet support patch releases past 2.4.0 |
 | Min Android | API 30 | Android 11+ |
 
 Dependencies are managed via the Gradle version catalog at `gradle/libs.versions.toml`. Do not add dependency versions directly in `build.gradle.kts` — add them to the catalog.
