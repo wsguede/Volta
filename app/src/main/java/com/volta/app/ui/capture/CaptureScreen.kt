@@ -70,10 +70,12 @@ fun CaptureScreen(
 
     LaunchedEffect(Unit) {
         val cameraGranted = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.CAMERA
+            context,
+            Manifest.permission.CAMERA
         ) == PackageManager.PERMISSION_GRANTED
         val locationGranted = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.ACCESS_FINE_LOCATION
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
         if (cameraGranted) {
             viewModel.onCameraPermissionResult(granted = true, isPermanentlyDenied = false)
@@ -125,7 +127,8 @@ private fun PermissionsResumeObserver(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 val cameraGranted = ContextCompat.checkSelfPermission(
-                    context, Manifest.permission.CAMERA
+                    context,
+                    Manifest.permission.CAMERA
                 ) == PackageManager.PERMISSION_GRANTED
                 val hasBeenRequested =
                     currentCameraPermission.value != CapturePermissionState.NotRequested
@@ -138,7 +141,8 @@ private fun PermissionsResumeObserver(
                     currentOnCamera.value(false, isPermanent)
                 }
                 val locationGranted = ContextCompat.checkSelfPermission(
-                    context, Manifest.permission.ACCESS_FINE_LOCATION
+                    context,
+                    Manifest.permission.ACCESS_FINE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED
                 currentOnLocation.value(locationGranted)
             }

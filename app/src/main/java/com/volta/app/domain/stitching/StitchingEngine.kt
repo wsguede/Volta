@@ -11,7 +11,4 @@ interface StitchingEngine {
     ): Flow<StitchingProgress>
 }
 
-data class StitchingProgress(
-    val percent: Float,
-    val result: StitchingResult? = null
-)
+data class StitchingProgress(val percent: Float, val result: StitchingResult? = null)
