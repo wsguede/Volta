@@ -67,6 +67,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
@@ -108,6 +114,9 @@ dependencies {
 
     // DataStore
     implementation(libs.datastore.preferences)
+
+    // EXIF / photo metadata
+    implementation(libs.exifinterface)
 
     // Logging
     implementation(libs.timber)
