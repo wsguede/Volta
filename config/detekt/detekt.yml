@@ -1,15 +1,12 @@
-build:
-  maxIssues: 0
-
 complexity:
   LongMethod:
-    threshold: 60
+    allowedLines: 60
   LongParameterList:
-    functionThreshold: 8
-    constructorThreshold: 10
+    allowedFunctionParameters: 8
+    allowedConstructorParameters: 10
   TooManyFunctions:
-    thresholdInFiles: 20
-    thresholdInClasses: 15
+    allowedFunctionsPerFile: 20
+    allowedFunctionsPerClass: 15
 
 style:
   MagicNumber:
