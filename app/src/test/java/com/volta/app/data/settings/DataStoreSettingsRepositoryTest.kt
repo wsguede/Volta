@@ -3,12 +3,17 @@ package com.volta.app.data.settings
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import app.cash.turbine.test
 import com.google.common.truth.Truth.assertThat
 import com.volta.app.domain.stitching.OutputResolution
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -64,6 +69,40 @@ class DataStoreSettingsRepositoryTest {
 
         secondInstance.outputResolution.test {
             assertThat(awaitItem()).isEqualTo(OutputResolution.MINIMUM)
+        }
+    }
+
+    @Test
+    fun `outputResolution falls back to STANDARD for an unrecognized stored value`() = runTest {
+        val file = tempFolder.newFile("settings.preferences_pb")
+        val setupScope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val setupStore = PreferenceDataStoreFactory.create(scope = setupScope, produceFile = {
+            file
+        })
+        setupStore.edit { it[stringPreferencesKey("output_resolution")] = "LEGACY_UNKNOWN_VALUE" }
+        setupScope.cancel()
+
+        val repository = DataStoreSettingsRepository(dataStore(file))
+
+        repository.outputResolution.test {
+            assertThat(awaitItem()).isEqualTo(OutputResolution.STANDARD)
+        }
+    }
+
+    @Test
+    fun `outputResolution falls back to STANDARD when the read throws IOException`() = runTest {
+        val corruptingDataStore = object : DataStore<Preferences> {
+            override val data: Flow<Preferences> = flow { throw IOException("corrupted file") }
+
+            override suspend fun updateData(
+                transform: suspend (t: Preferences) -> Preferences
+            ): Preferences = error("not needed for this test")
+        }
+        val repository = DataStoreSettingsRepository(corruptingDataStore)
+
+        repository.outputResolution.test {
+            assertThat(awaitItem()).isEqualTo(OutputResolution.STANDARD)
+            awaitComplete()
         }
     }
 }

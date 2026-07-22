@@ -20,7 +20,7 @@ class SettingsViewModel @Inject constructor(private val settingsRepository: Sett
         .map { resolution -> SettingsUiState(outputResolution = resolution) }
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(SHARE_STOP_TIMEOUT_MS),
+            started = SharingStarted.Eagerly,
             initialValue = SettingsUiState()
         )
 
@@ -28,9 +28,5 @@ class SettingsViewModel @Inject constructor(private val settingsRepository: Sett
         viewModelScope.launch {
             settingsRepository.setOutputResolution(resolution)
         }
-    }
-
-    private companion object {
-        const val SHARE_STOP_TIMEOUT_MS = 5_000L
     }
 }
