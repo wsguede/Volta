@@ -2,7 +2,6 @@ import java.time.LocalDate
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
@@ -12,7 +11,7 @@ plugins {
 
 android {
     namespace = "com.volta.app"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.volta.app"
@@ -52,9 +51,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    @Suppress("DEPRECATION")
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
 
     buildFeatures {
