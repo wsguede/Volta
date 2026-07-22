@@ -144,4 +144,18 @@ class MediaStorePhotoExporterTest {
         assertThat(result.isFailure).isTrue()
         verify { resolver.delete(uri, null, null) }
     }
+
+    @Test
+    fun `still returns a failure result when the rollback delete itself throws`() = runTest {
+        stubMetadataWriter()
+        every { context.contentResolver } returns resolver
+        every { resolver.insert(any(), any()) } returns uri
+        every { resolver.openOutputStream(uri) } returns null
+        every { resolver.delete(uri, null, null) } throws SecurityException("no access")
+
+        val result = exporter().saveToGallery(jpegData, OutputResolution.STANDARD, null)
+
+        assertThat(result.isFailure).isTrue()
+        verify { resolver.delete(uri, null, null) }
+    }
 }

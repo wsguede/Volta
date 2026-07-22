@@ -10,6 +10,7 @@ import com.volta.app.domain.model.GpsCoordinates
 import com.volta.app.domain.stitching.OutputResolution
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -38,11 +39,13 @@ class MediaStorePhotoExporter @Inject constructor(
             val finalJpegData = try {
                 metadataWriter.write(jpegData, outputResolution, gpsCoordinates, scratchFile)
             } finally {
-                scratchFile.delete()
+                if (!scratchFile.delete()) {
+                    Timber.w("Failed to delete export scratch file %s", scratchFile.absolutePath)
+                }
             }
 
             val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, "volta_${System.currentTimeMillis()}.jpg")
+                put(MediaStore.Images.Media.DISPLAY_NAME, "volta_${UUID.randomUUID()}.jpg")
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
                 put(
                     MediaStore.Images.Media.RELATIVE_PATH,
@@ -68,7 +71,12 @@ class MediaStorePhotoExporter @Inject constructor(
             uri.toString()
         }.onFailure { failure ->
             Timber.e(failure, "Failed to export photosphere to the gallery")
-            insertedUri?.let { resolver.delete(it, null, null) }
+            insertedUri?.let { uri ->
+                runCatching { resolver.delete(uri, null, null) }
+                    .onFailure { rollbackFailure ->
+                        Timber.e(rollbackFailure, "Failed to roll back MediaStore row for $uri")
+                    }
+            }
         }
     }
 
