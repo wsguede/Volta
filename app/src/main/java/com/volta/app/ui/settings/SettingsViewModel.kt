@@ -2,7 +2,7 @@ package com.volta.app.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.volta.app.data.settings.SettingsRepository
+import com.volta.app.domain.settings.SettingsRepository
 import com.volta.app.domain.stitching.OutputResolution
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject

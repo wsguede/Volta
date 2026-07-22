@@ -1,4 +1,4 @@
-package com.volta.app.data.settings
+package com.volta.app.domain.settings
 
 import com.volta.app.domain.stitching.OutputResolution
 import kotlinx.coroutines.flow.Flow

@@ -2,7 +2,7 @@ package com.volta.app.ui.settings
 
 import app.cash.turbine.test
 import com.google.common.truth.Truth.assertThat
-import com.volta.app.data.settings.SettingsRepository
+import com.volta.app.domain.settings.SettingsRepository
 import com.volta.app.domain.stitching.OutputResolution
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow

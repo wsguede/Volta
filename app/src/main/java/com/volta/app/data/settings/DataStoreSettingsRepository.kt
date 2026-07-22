@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.volta.app.domain.settings.SettingsRepository
 import com.volta.app.domain.stitching.OutputResolution
 import java.io.IOException
 import javax.inject.Inject
