@@ -75,10 +75,12 @@ Dependencies are managed via the Gradle version catalog at `gradle/libs.versions
 
 | Layer | Responsibility | Allowed dependencies |
 |---|---|---|
-| `ui/` | Composables and ViewModels | `domain/`, Android framework |
+| `ui/` | Composables and ViewModels | `domain/`, `data/` repository interfaces (e.g. `GpsRepository`, `SettingsRepository`), Android framework |
 | `domain/` | Business logic (capture, coverage, stitching) | Kotlin stdlib + kotlinx-coroutines only — no Android imports |
 | `data/` | Camera, ARCore, GPS, file system access | Android framework, external SDKs |
 | `di/` | Hilt modules | All layers |
+
+ViewModels depend on `data/` repository *interfaces* only (injected via Hilt `@Binds`), never on concrete implementations — the interface is the seam that keeps ViewModels testable with a fake.
 
 Keep business logic out of Composables. Keep Android framework dependencies out of `domain/`.
 

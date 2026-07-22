@@ -35,8 +35,12 @@ class DataStoreSettingsRepository @Inject constructor(
         }
 
     override suspend fun setOutputResolution(resolution: OutputResolution) {
-        dataStore.edit { preferences ->
-            preferences[OUTPUT_RESOLUTION_KEY] = resolution.name
+        try {
+            dataStore.edit { preferences ->
+                preferences[OUTPUT_RESOLUTION_KEY] = resolution.name
+            }
+        } catch (e: IOException) {
+            Timber.e(e, "Failed to persist output resolution: $resolution")
         }
     }
 

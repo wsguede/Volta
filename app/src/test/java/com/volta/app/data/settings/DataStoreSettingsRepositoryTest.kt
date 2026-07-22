@@ -105,4 +105,18 @@ class DataStoreSettingsRepositoryTest {
             awaitComplete()
         }
     }
+
+    @Test
+    fun `setOutputResolution does not throw when the write fails with IOException`() = runTest {
+        val failingDataStore = object : DataStore<Preferences> {
+            override val data: Flow<Preferences> = flow { error("not needed for this test") }
+
+            override suspend fun updateData(
+                transform: suspend (t: Preferences) -> Preferences
+            ): Preferences = throw IOException("disk full")
+        }
+        val repository = DataStoreSettingsRepository(failingDataStore)
+
+        repository.setOutputResolution(OutputResolution.MINIMUM)
+    }
 }
