@@ -153,6 +153,7 @@ Each screen package contains exactly one `*Screen.kt` (Composable), one `*ViewMo
 | Logging | Timber | [0007](docs/adr/0007-use-timber-for-logging.md) |
 | Navigation | Navigation Compose | [0008](docs/adr/0008-use-navigation-compose.md) |
 | Location | Play Services Location | [0009](docs/adr/0009-use-play-services-location.md) |
+| Settings persistence | DataStore Preferences | [0011](docs/adr/0011-use-datastore-preferences-for-settings.md) |
 | Formatting | ktlint | — |
 | Static analysis | Detekt | — |
 | CI | GitHub Actions | — |

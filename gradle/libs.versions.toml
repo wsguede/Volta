@@ -18,6 +18,7 @@ mockk = "1.14.11"
 truth = "1.4.5"
 turbine = "1.2.1"
 play-services-location = "21.4.0"
+datastore = "1.2.1"
 androidx-test-runner = "1.7.0"
 detekt = "1.23.8"
 ktlint = "14.2.0"
@@ -57,6 +58,9 @@ arcore = { group = "com.google.ar", name = "core", version.ref = "arcore" }
 
 # Location
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "play-services-location" }
+
+# DataStore
+datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 
 # Logging
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }

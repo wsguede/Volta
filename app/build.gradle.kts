@@ -106,6 +106,9 @@ dependencies {
     // Location
     implementation(libs.play.services.location)
 
+    // DataStore
+    implementation(libs.datastore.preferences)
+
     // Logging
     implementation(libs.timber)
 
