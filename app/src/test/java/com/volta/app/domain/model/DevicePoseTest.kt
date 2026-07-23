@@ -22,7 +22,12 @@ class DevicePoseTest {
     @Test
     fun `a thirty degree rotation about the world Y axis yields thirty degrees of yaw only`() {
         val halfAngle = (PI / 6) / 2
-        val pose = DevicePose.fromQuaternion(x = 0.0, y = sin(halfAngle), z = 0.0, w = cos(halfAngle))
+        val pose = DevicePose.fromQuaternion(
+            x = 0.0,
+            y = sin(halfAngle),
+            z = 0.0,
+            w = cos(halfAngle)
+        )
 
         assertThat(pose.yaw).isWithin(tolerance).of(PI / 6)
         assertThat(pose.pitch).isWithin(tolerance).of(0.0)
