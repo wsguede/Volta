@@ -1,5 +1,5 @@
 package com.volta.app.domain.settings
 
-interface AppVersionProvider {
+interface AppVersionDataSource {
     val versionName: String
 }

@@ -7,9 +7,9 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStoreFile
-import com.volta.app.data.settings.BuildConfigAppVersionProvider
+import com.volta.app.data.settings.BuildConfigAppVersionDataSource
 import com.volta.app.data.settings.DataStoreSettingsRepository
-import com.volta.app.domain.settings.AppVersionProvider
+import com.volta.app.domain.settings.AppVersionDataSource
 import com.volta.app.domain.settings.SettingsRepository
 import dagger.Binds
 import dagger.Module
@@ -30,7 +30,9 @@ abstract class SettingsModule {
 
     @Binds
     @Singleton
-    abstract fun bindAppVersionProvider(impl: BuildConfigAppVersionProvider): AppVersionProvider
+    abstract fun bindAppVersionDataSource(
+        impl: BuildConfigAppVersionDataSource
+    ): AppVersionDataSource
 
     companion object {
         private const val SETTINGS_DATASTORE_FILE_NAME = "settings"
