@@ -2,6 +2,7 @@ package com.volta.app.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.volta.app.domain.settings.AppVersionDataSource
 import com.volta.app.domain.settings.SettingsRepository
 import com.volta.app.domain.stitching.OutputResolution
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -13,15 +14,21 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 @HiltViewModel
-class SettingsViewModel @Inject constructor(private val settingsRepository: SettingsRepository) :
-    ViewModel() {
+class SettingsViewModel @Inject constructor(
+    private val settingsRepository: SettingsRepository,
+    appVersionDataSource: AppVersionDataSource
+) : ViewModel() {
+
+    private val appVersion = "v${appVersionDataSource.versionName}"
 
     val uiState: StateFlow<SettingsUiState> = settingsRepository.outputResolution
-        .map { resolution -> SettingsUiState(outputResolution = resolution) }
+        .map { resolution ->
+            SettingsUiState(outputResolution = resolution, appVersion = appVersion)
+        }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
-            initialValue = SettingsUiState()
+            initialValue = SettingsUiState(appVersion = appVersion)
         )
 
     fun setResolution(resolution: OutputResolution) {

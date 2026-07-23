@@ -2,6 +2,7 @@ package com.volta.app.ui.settings
 
 import app.cash.turbine.test
 import com.google.common.truth.Truth.assertThat
+import com.volta.app.domain.settings.AppVersionDataSource
 import com.volta.app.domain.settings.SettingsRepository
 import com.volta.app.domain.stitching.OutputResolution
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +30,9 @@ private class FakeSettingsRepository(initial: OutputResolution = OutputResolutio
     }
 }
 
+private class FakeAppVersionDataSource(override val versionName: String = "9.9.9") :
+    AppVersionDataSource
+
 class SettingsViewModelTest {
 
     @Before
@@ -44,7 +48,7 @@ class SettingsViewModelTest {
     @Test
     fun `initial uiState reflects the repository's persisted resolution`() = runTest {
         val repository = FakeSettingsRepository(initial = OutputResolution.MINIMUM)
-        val viewModel = SettingsViewModel(repository)
+        val viewModel = SettingsViewModel(repository, FakeAppVersionDataSource())
 
         viewModel.uiState.test {
             assertThat(awaitItem().outputResolution).isEqualTo(OutputResolution.MINIMUM)
@@ -54,7 +58,7 @@ class SettingsViewModelTest {
     @Test
     fun `setResolution persists the selection via the repository`() = runTest {
         val repository = FakeSettingsRepository()
-        val viewModel = SettingsViewModel(repository)
+        val viewModel = SettingsViewModel(repository, FakeAppVersionDataSource())
 
         viewModel.setResolution(OutputResolution.MINIMUM)
 
@@ -64,12 +68,25 @@ class SettingsViewModelTest {
     @Test
     fun `uiState updates when the repository emits a new value`() = runTest {
         val repository = FakeSettingsRepository()
-        val viewModel = SettingsViewModel(repository)
+        val viewModel = SettingsViewModel(repository, FakeAppVersionDataSource())
 
         viewModel.uiState.test {
             assertThat(awaitItem().outputResolution).isEqualTo(OutputResolution.STANDARD)
             viewModel.setResolution(OutputResolution.MINIMUM)
             assertThat(awaitItem().outputResolution).isEqualTo(OutputResolution.MINIMUM)
+        }
+    }
+
+    @Test
+    fun `uiState formats the app version from the version provider`() = runTest {
+        val repository = FakeSettingsRepository()
+        val viewModel = SettingsViewModel(
+            repository,
+            FakeAppVersionDataSource(versionName = "9.9.9")
+        )
+
+        viewModel.uiState.test {
+            assertThat(awaitItem().appVersion).isEqualTo("v9.9.9")
         }
     }
 }
