@@ -1,9 +1,9 @@
 package com.volta.app.data.ar
 
+import com.google.ar.core.TrackingState as ArCoreTrackingState
 import com.google.common.truth.Truth.assertThat
 import com.volta.app.domain.model.TrackingState
 import org.junit.Test
-import com.google.ar.core.TrackingState as ArCoreTrackingState
 
 class ArTrackingStateMapperTest {
 
