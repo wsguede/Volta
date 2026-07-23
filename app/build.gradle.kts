@@ -67,6 +67,19 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    testOptions {
+        unitTests {
+            // Without this, any unstubbed android.* call in local unit tests throws "not mocked"
+            // instead of returning a default value — needed so ExifInterface's static
+            // initializer (android.util.Log) and read-only calls work without Robolectric. This
+            // does NOT make ContentValues or ExifInterface.setAttribute() behave correctly under
+            // test (they still can't be exercised for real here) — it only stops unrelated
+            // unstubbed calls from throwing outright. See PanoramaMetadataWriterTest for the
+            // pattern used to test EXIF-writing logic without a working setAttribute().
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
@@ -108,6 +121,9 @@ dependencies {
 
     // DataStore
     implementation(libs.datastore.preferences)
+
+    // EXIF / photo metadata
+    implementation(libs.exifinterface)
 
     // Logging
     implementation(libs.timber)

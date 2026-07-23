@@ -1,0 +1,89 @@
+package com.volta.app.data.export
+
+import com.volta.app.domain.stitching.OutputResolution
+import java.io.ByteArrayOutputStream
+
+/**
+ * Embeds the Google `GPano` XMP namespace as a standalone APP1 segment as early as possible in
+ * the JPEG (right after SOI, or after an existing JFIF APP0 segment when present — APP0 must
+ * stay the first marker per the JFIF spec), so photosphere viewers (Google Maps, Street View)
+ * recognise the exported image as an equirectangular panorama. Written by hand rather than via a
+ * library because ExifInterface's XMP support does not guarantee a spec-compliant standalone
+ * XMP packet — see ADR 0012.
+ */
+object GPanoXmpInjector {
+
+    private val XMP_NAMESPACE_IDENTIFIER = "http://ns.adobe.com/xap/1.0/\u0000".toByteArray(
+        Charsets.US_ASCII
+    )
+    private const val SOI_MARKER_SIZE = 2
+    private const val APP1_LENGTH_FIELD_SIZE = 2
+    private const val MARKER_SIZE = 2
+    private const val APP0_MARKER_SECOND_BYTE = 0xE0
+    private const val MAX_SEGMENT_LENGTH = 0xFFFF
+
+    fun inject(jpegData: ByteArray, resolution: OutputResolution): ByteArray {
+        require(isJpeg(jpegData)) { "Not a valid JPEG: missing SOI marker" }
+
+        val xmpPacket = buildXmpPacket(resolution).toByteArray(Charsets.UTF_8)
+        val segmentLength = APP1_LENGTH_FIELD_SIZE + XMP_NAMESPACE_IDENTIFIER.size + xmpPacket.size
+        require(segmentLength <= MAX_SEGMENT_LENGTH) {
+            "GPano XMP segment ($segmentLength bytes) exceeds the JPEG APP1 length field's " +
+                "$MAX_SEGMENT_LENGTH-byte limit"
+        }
+        val insertionOffset = insertionOffset(jpegData)
+
+        return ByteArrayOutputStream(jpegData.size + segmentLength + MARKER_SIZE).apply {
+            write(jpegData, 0, insertionOffset)
+            write(0xFF)
+            write(0xE1)
+            write(segmentLength ushr 8)
+            write(segmentLength and 0xFF)
+            write(XMP_NAMESPACE_IDENTIFIER)
+            write(xmpPacket)
+            write(jpegData, insertionOffset, jpegData.size - insertionOffset)
+        }.toByteArray()
+    }
+
+    private fun isJpeg(jpegData: ByteArray): Boolean = jpegData.size >= SOI_MARKER_SIZE &&
+        jpegData[0] == 0xFF.toByte() &&
+        jpegData[1] == 0xD8.toByte()
+
+    // APP0 (JFIF) must remain the first marker after SOI when present, so insert after it
+    // rather than always splicing at offset 2.
+    private fun insertionOffset(jpegData: ByteArray): Int {
+        val app0HeaderEnd = SOI_MARKER_SIZE + MARKER_SIZE + APP1_LENGTH_FIELD_SIZE
+        val hasLeadingApp0 = jpegData.size >= app0HeaderEnd &&
+            jpegData[SOI_MARKER_SIZE] == 0xFF.toByte() &&
+            jpegData[SOI_MARKER_SIZE + 1] == APP0_MARKER_SECOND_BYTE.toByte()
+        if (!hasLeadingApp0) return SOI_MARKER_SIZE
+
+        val app0Length = ((jpegData[SOI_MARKER_SIZE + 2].toInt() and 0xFF) shl 8) or
+            (jpegData[SOI_MARKER_SIZE + 3].toInt() and 0xFF)
+        return SOI_MARKER_SIZE + MARKER_SIZE + app0Length
+    }
+
+    private fun buildXmpPacket(resolution: OutputResolution): String {
+        val width = resolution.width
+        val height = resolution.height
+        return """
+            |<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+            |<x:xmpmeta xmlns:x="adobe:ns:meta/">
+            |<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+            |<rdf:Description rdf:about=""
+            |  xmlns:GPano="http://ns.google.com/photos/1.0/panorama/"
+            |  GPano:UsePanoramaViewer="True"
+            |  GPano:ProjectionType="equirectangular"
+            |  GPano:FullPanoWidthPixels="$width"
+            |  GPano:FullPanoHeightPixels="$height"
+            |  GPano:CroppedAreaImageWidthPixels="$width"
+            |  GPano:CroppedAreaImageHeightPixels="$height"
+            |  GPano:CroppedAreaLeftPixels="0"
+            |  GPano:CroppedAreaTopPixels="0"/>
+            |</rdf:RDF>
+            |</x:xmpmeta>
+            |<?xpacket end="w"?>
+            |
+        """.trimMargin()
+    }
+}
