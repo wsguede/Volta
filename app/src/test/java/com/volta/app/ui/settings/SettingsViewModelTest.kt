@@ -72,4 +72,16 @@ class SettingsViewModelTest {
             assertThat(awaitItem().outputResolution).isEqualTo(OutputResolution.MINIMUM)
         }
     }
+
+    @Test
+    fun `uiState exposes the app version from BuildConfig`() = runTest {
+        val repository = FakeSettingsRepository()
+        val viewModel = SettingsViewModel(repository)
+
+        viewModel.uiState.test {
+            assertThat(
+                awaitItem().appVersion
+            ).isEqualTo("v${com.volta.app.BuildConfig.VERSION_NAME}")
+        }
+    }
 }
