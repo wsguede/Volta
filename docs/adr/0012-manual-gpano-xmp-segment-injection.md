@@ -17,14 +17,21 @@ Street View recognise the file as an equirectangular panorama. Two approaches we
    parsers reject.
 2. Construct the XMP APP1 segment by hand — marker `0xFFE1`, big-endian length, the
    `http://ns.adobe.com/xap/1.0/\0` identifier, then the UTF-8 XMP packet — and splice it into
-   the JPEG byte stream immediately after the SOI marker.
+   the JPEG byte stream as early as possible: immediately after the SOI marker, or after an
+   existing JFIF APP0 segment when the source JPEG has one. JPEG encoders commonly used for
+   stitched output (confirmed empirically for `javax.imageio`'s JPEG writer, and expected for
+   OpenCV's `imencode`) emit a leading APP0 segment, and the JFIF spec requires APP0 to remain
+   the first marker after SOI when present — splicing XMP unconditionally at offset 2 would push
+   that segment out of first position.
 
 ## Decision
 
 Embed the `GPano` XMP packet by manually constructing and inserting the APP1 segment
 (`GPanoXmpInjector`, pure Kotlin, no Android dependency) before the file is handed to
-`ExifInterface` for standard EXIF GPS tag writing (`PanoramaMetadataWriter`). `ExifInterface` is
-used only for the well-documented, testable parts of the format: `setLatLong` / `setAltitude`.
+`ExifInterface` for standard EXIF GPS tag writing (`PanoramaMetadataWriter`). `GPanoXmpInjector`
+detects a leading JFIF APP0 segment and inserts the XMP APP1 segment immediately after it,
+falling back to immediately after SOI when there is no APP0. `ExifInterface` is used only for
+the well-documented, testable parts of the format: `setLatLong` / `setAltitude`.
 
 ## Consequences
 

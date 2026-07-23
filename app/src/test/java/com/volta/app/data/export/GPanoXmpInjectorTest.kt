@@ -24,9 +24,9 @@ class GPanoXmpInjectorTest {
         val start = text.indexOf(identifier)
         check(start >= 0) { "XMP APP1 segment not found" }
         val packetStart = start + identifier.length
-        val packetEnd = text.indexOf("<?xpacket end", packetStart).let { end ->
-            text.indexOf("?>", end) + 2
-        }
+        val endTagStart = text.indexOf("<?xpacket end", packetStart)
+        check(endTagStart >= 0) { "XMP packet end tag not found" }
+        val packetEnd = text.indexOf("?>", endTagStart) + 2
         return text.substring(packetStart, packetEnd)
     }
 

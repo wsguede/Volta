@@ -61,12 +61,15 @@ class MediaStorePhotoExporter @Inject constructor(
             resolver.openOutputStream(uri)?.use { it.write(finalJpegData) }
                 ?: error("Unable to open an output stream for $uri")
 
-            resolver.update(
+            val updatedRows = resolver.update(
                 uri,
                 ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) },
                 null,
                 null
             )
+            if (updatedRows == 0) {
+                Timber.w("Clearing IS_PENDING for $uri affected no rows; the row may be gone")
+            }
 
             uri.toString()
         }.onFailure { failure ->

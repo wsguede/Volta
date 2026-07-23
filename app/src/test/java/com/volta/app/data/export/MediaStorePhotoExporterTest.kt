@@ -64,6 +64,20 @@ class MediaStorePhotoExporterTest {
         }
 
     @Test
+    fun `still succeeds when clearing IS_PENDING affects zero rows`() = runTest {
+        stubMetadataWriter()
+        every { context.contentResolver } returns resolver
+        every { resolver.insert(any(), any()) } returns uri
+        every { resolver.openOutputStream(uri) } returns ByteArrayOutputStream()
+        every { resolver.update(uri, any(), null, null) } returns 0
+        every { uri.toString() } returns "content://media/external/images/media/42"
+
+        val result = exporter().saveToGallery(jpegData, OutputResolution.STANDARD, null)
+
+        assertThat(result.getOrNull()).isEqualTo("content://media/external/images/media/42")
+    }
+
+    @Test
     fun `passes the jpeg bytes, resolution and coordinates through to the metadata writer`() =
         runTest {
             stubMetadataWriter()
