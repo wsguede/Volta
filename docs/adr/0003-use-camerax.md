@@ -1,7 +1,7 @@
 # 0003 — Use CameraX for Camera Access
 
 **Date:** 2026-06-27
-**Status:** Accepted
+**Status:** Superseded by 0013
 
 ## Context
 
