@@ -19,7 +19,7 @@ internal class ArSessionOrchestrator<S>(
     private var session: S? = null
     private var wasResumed = false
     private var isSessionResumed = false
-    private var sessionPermanentlyUnavailable = false
+    private var sessionCreationBackingOff = false
 
     /**
      * Advances the state machine by one tick. Returns the delay (ms) the caller should sleep
@@ -44,17 +44,17 @@ internal class ArSessionOrchestrator<S>(
     private fun ensureResumed(): S? {
         val activeSession = session ?: createSession()?.also {
             session = it
-            sessionPermanentlyUnavailable = false
+            sessionCreationBackingOff = false
             onAvailabilityChanged(true)
         } ?: run {
-            sessionPermanentlyUnavailable = true
+            sessionCreationBackingOff = true
             onAvailabilityChanged(false)
             return null
         }
         if (isSessionResumed) return activeSession
         if (!resumeSession(activeSession)) return null
         isSessionResumed = true
-        sessionPermanentlyUnavailable = false
+        sessionCreationBackingOff = false
         return activeSession
     }
 
@@ -64,7 +64,7 @@ internal class ArSessionOrchestrator<S>(
         onTrackingLost()
     }
 
-    private fun retryDelay(): Long = if (sessionPermanentlyUnavailable) {
+    private fun retryDelay(): Long = if (sessionCreationBackingOff) {
         UNAVAILABLE_RETRY_INTERVAL_MS
     } else {
         PAUSED_POLL_INTERVAL_MS
