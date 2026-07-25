@@ -100,12 +100,13 @@ app/
     │       │   └── theme/            # Material 3 dark theme
     │       ├── domain/
     │       │   ├── model/            # Shared domain types (GpsCoordinates, FrameData)
+    │       │   ├── ar/               # ArSessionManager (ARCore session data source interface)
     │       │   ├── capture/          # Frame capture triggering, blur detection
     │       │   ├── coverage/         # Sphere coverage tracking
     │       │   └── stitching/        # Stitching orchestration, OutputResolution
     │       ├── data/
-    │       │   ├── camera/           # CameraX integration
-    │       │   ├── ar/               # ARCore integration
+    │       │   ├── ar/               # ARCore camera integration (owns the camera exclusively —
+    │       │   │                     #   see ADR 0013; supersedes the earlier CameraX approach)
     │       │   ├── gps/              # Location / GPS
     │       │   └── export/           # MediaStore / file system
     │       ├── di/                   # Hilt modules
@@ -146,8 +147,7 @@ Each screen package contains exactly one `*Screen.kt` (Composable), one `*ViewMo
 | UI | Jetpack Compose + Material 3 | [0001](docs/adr/0001-use-mvvm-architecture.md) |
 | Architecture | MVVM + StateFlow | [0001](docs/adr/0001-use-mvvm-architecture.md) |
 | DI | Hilt (KSP) | [0002](docs/adr/0002-use-hilt-for-dependency-injection.md) |
-| Camera | CameraX | [0003](docs/adr/0003-use-camerax.md) |
-| AR | ARCore | [0006](docs/adr/0006-android-first.md) |
+| Camera & AR | ARCore | [0013](docs/adr/0013-use-arcore-for-camera-access.md) |
 | Stitching | OpenCV (planned) | [0004](docs/adr/0004-use-opencv-for-stitching.md) |
 | Async | Kotlin Coroutines + Flow | [0005](docs/adr/0005-use-kotlin-coroutines.md) |
 | Logging | Timber | [0007](docs/adr/0007-use-timber-for-logging.md) |

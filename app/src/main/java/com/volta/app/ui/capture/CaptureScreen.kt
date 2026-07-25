@@ -69,27 +69,7 @@ fun CaptureScreen(
     }
 
     LaunchedEffect(Unit) {
-        val cameraGranted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.CAMERA
-        ) == PackageManager.PERMISSION_GRANTED
-        val locationGranted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-        if (cameraGranted) {
-            viewModel.onCameraPermissionResult(granted = true, isPermanentlyDenied = false)
-        }
-        if (locationGranted) {
-            viewModel.onLocationPermissionResult(granted = true)
-        }
-        val toRequest = buildList {
-            if (!cameraGranted) add(Manifest.permission.CAMERA)
-            if (!locationGranted) add(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-        if (toRequest.isNotEmpty()) {
-            permissionsLauncher.launch(toRequest.toTypedArray())
-        }
+        checkAndRequestInitialPermissions(context, viewModel) { permissionsLauncher.launch(it) }
     }
 
     PermissionsResumeObserver(
@@ -98,6 +78,17 @@ fun CaptureScreen(
         cameraPermission = uiState.cameraPermission,
         onCameraPermissionResult = viewModel::onCameraPermissionResult,
         onLocationPermissionResult = viewModel::onLocationPermissionResult
+    )
+
+    // Two separate LifecycleEventObservers both react to ON_RESUME here. Their relative order
+    // doesn't matter for correctness: if this one runs before PermissionsResumeObserver's on a
+    // given ON_RESUME, onScreenResumed() may read a not-yet-updated cameraPermission and skip
+    // resume() — but PermissionsResumeObserver's onCameraPermissionResult(granted = true) calls
+    // arSessionManager.resume() directly too, so the same ON_RESUME dispatch still resumes the
+    // session regardless of which observer runs first.
+    ArSessionLifecycleObserver(
+        onResume = viewModel::onScreenResumed,
+        onPause = viewModel::onScreenPaused
     )
 
     CaptureContent(
@@ -145,6 +136,52 @@ private fun PermissionsResumeObserver(
                     Manifest.permission.ACCESS_FINE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED
                 currentOnLocation.value(locationGranted)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+}
+
+private fun checkAndRequestInitialPermissions(
+    context: Context,
+    viewModel: CaptureViewModel,
+    requestPermissions: (Array<String>) -> Unit
+) {
+    val cameraGranted = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.CAMERA
+    ) == PackageManager.PERMISSION_GRANTED
+    val locationGranted = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    if (cameraGranted) {
+        viewModel.onCameraPermissionResult(granted = true, isPermanentlyDenied = false)
+    }
+    if (locationGranted) {
+        viewModel.onLocationPermissionResult(granted = true)
+    }
+    val toRequest = buildList {
+        if (!cameraGranted) add(Manifest.permission.CAMERA)
+        if (!locationGranted) add(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+    if (toRequest.isNotEmpty()) {
+        requestPermissions(toRequest.toTypedArray())
+    }
+}
+
+@Composable
+private fun ArSessionLifecycleObserver(onResume: () -> Unit, onPause: () -> Unit) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentOnResume = rememberUpdatedState(onResume)
+    val currentOnPause = rememberUpdatedState(onPause)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> currentOnResume.value()
+                Lifecycle.Event.ON_PAUSE -> currentOnPause.value()
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
