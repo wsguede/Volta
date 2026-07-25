@@ -63,4 +63,38 @@ class DevicePoseTest {
         assertThat(pose.pitch).isWithin(tolerance).of(0.0)
         assertThat(pose.roll).isWithin(tolerance).of(PI / 6)
     }
+
+    @Test
+    fun `gimbal lock looking straight up yields stable pitch, yaw and roll`() {
+        val halfAngle = (PI / 2) / 2
+        val pose = DevicePose.fromQuaternion(
+            x = sin(halfAngle),
+            y = 0.0,
+            z = 0.0,
+            w = cos(halfAngle)
+        )
+
+        assertThat(pose.pitch).isWithin(tolerance).of(PI / 2)
+        assertThat(pose.yaw).isFinite()
+        assertThat(pose.roll).isFinite()
+        assertThat(pose.yaw).isWithin(tolerance).of(0.0)
+        assertThat(pose.roll).isWithin(tolerance).of(0.0)
+    }
+
+    @Test
+    fun `gimbal lock looking straight down yields stable pitch, yaw and roll`() {
+        val halfAngle = (-PI / 2) / 2
+        val pose = DevicePose.fromQuaternion(
+            x = sin(halfAngle),
+            y = 0.0,
+            z = 0.0,
+            w = cos(halfAngle)
+        )
+
+        assertThat(pose.pitch).isWithin(tolerance).of(-PI / 2)
+        assertThat(pose.yaw).isFinite()
+        assertThat(pose.roll).isFinite()
+        assertThat(pose.yaw).isWithin(tolerance).of(0.0)
+        assertThat(pose.roll).isWithin(tolerance).of(0.0)
+    }
 }
