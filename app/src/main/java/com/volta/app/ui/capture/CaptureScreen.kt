@@ -80,6 +80,12 @@ fun CaptureScreen(
         onLocationPermissionResult = viewModel::onLocationPermissionResult
     )
 
+    // Two separate LifecycleEventObservers both react to ON_RESUME here. Their relative order
+    // doesn't matter for correctness: if this one runs before PermissionsResumeObserver's on a
+    // given ON_RESUME, onScreenResumed() may read a not-yet-updated cameraPermission and skip
+    // resume() — but PermissionsResumeObserver's onCameraPermissionResult(granted = true) calls
+    // arSessionManager.resume() directly too, so the same ON_RESUME dispatch still resumes the
+    // session regardless of which observer runs first.
     ArSessionLifecycleObserver(
         onResume = viewModel::onScreenResumed,
         onPause = viewModel::onScreenPaused

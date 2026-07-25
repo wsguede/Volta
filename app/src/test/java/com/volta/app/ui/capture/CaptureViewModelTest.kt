@@ -187,4 +187,24 @@ class CaptureViewModelTest {
 
         assertThat(arSessionManager.resumeCalls).isEqualTo(0)
     }
+
+    @Test
+    fun `denying camera permission pauses the ARCore session`() {
+        val arSessionManager = FakeArSessionManager()
+        val viewModel = viewModel(arSessionManager)
+
+        viewModel.onCameraPermissionResult(granted = false, isPermanentlyDenied = false)
+
+        assertThat(arSessionManager.pauseCalls).isEqualTo(1)
+    }
+
+    @Test
+    fun `permanently denying camera permission pauses the ARCore session`() {
+        val arSessionManager = FakeArSessionManager()
+        val viewModel = viewModel(arSessionManager)
+
+        viewModel.onCameraPermissionResult(granted = false, isPermanentlyDenied = true)
+
+        assertThat(arSessionManager.pauseCalls).isEqualTo(1)
+    }
 }

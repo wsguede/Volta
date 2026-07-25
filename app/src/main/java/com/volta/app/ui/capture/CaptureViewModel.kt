@@ -45,8 +45,13 @@ class CaptureViewModel @Inject constructor(private val arSessionManager: ArSessi
             else -> CapturePermissionState.Denied
         }
         _uiState.update { it.copy(cameraPermission = permission) }
+        // Not currently reachable via the UI (permission revocation requires backgrounding
+        // first, which already triggers onScreenPaused()), but pausing explicitly here rather
+        // than relying on that lifecycle timing is cheap defense-in-depth.
         if (granted) {
             arSessionManager.resume()
+        } else {
+            arSessionManager.pause()
         }
     }
 
