@@ -1,5 +1,6 @@
 package com.volta.app.ui.capture
 
+import android.opengl.GLSurfaceView
 import androidx.lifecycle.ViewModel
 import com.volta.app.domain.ar.ArSessionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -10,8 +11,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 @HiltViewModel
-class CaptureViewModel @Inject constructor(private val arSessionManager: ArSessionManager) :
-    ViewModel() {
+class CaptureViewModel @Inject constructor(
+    private val arSessionManager: ArSessionManager,
+    val cameraRenderer: GLSurfaceView.Renderer
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CaptureUiState())
     val uiState: StateFlow<CaptureUiState> = _uiState.asStateFlow()

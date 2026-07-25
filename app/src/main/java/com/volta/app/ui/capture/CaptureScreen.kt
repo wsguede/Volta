@@ -3,6 +3,7 @@ package com.volta.app.ui.capture
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.opengl.GLSurfaceView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
@@ -28,12 +29,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -43,6 +46,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.volta.app.ui.theme.VoltaTheme
 import com.volta.app.ui.util.findComponentActivity
 import com.volta.app.ui.util.openAppSettings
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
 
 @Composable
 fun CaptureScreen(
@@ -93,6 +98,7 @@ fun CaptureScreen(
 
     CaptureContent(
         uiState = uiState,
+        cameraRenderer = viewModel.cameraRenderer,
         onExport = onExport,
         onSettings = onSettings,
         onRequestCameraPermission = {
@@ -195,6 +201,7 @@ internal fun CaptureContent(
     uiState: CaptureUiState,
     onExport: () -> Unit,
     onSettings: () -> Unit,
+    cameraRenderer: GLSurfaceView.Renderer = NoOpGlRenderer,
     onRequestCameraPermission: () -> Unit = {},
     onOpenAppSettings: () -> Unit = {}
 ) {
@@ -219,6 +226,7 @@ internal fun CaptureContent(
                 CapturePermissionState.NotRequested -> CameraStartingPlaceholder()
                 CapturePermissionState.Granted -> CaptureActiveContent(
                     uiState = uiState,
+                    cameraRenderer = cameraRenderer,
                     onExport = onExport
                 )
                 CapturePermissionState.Denied -> CameraPermissionDeniedCard(
@@ -249,30 +257,73 @@ private fun CameraStartingPlaceholder() {
 }
 
 @Composable
-private fun CaptureActiveContent(uiState: CaptureUiState, onExport: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.weight(1f))
-        Text("Frames: ${uiState.framesCaptured}")
-        Text(
-            "Coverage: ${
-                String.format(
-                    java.util.Locale.US,
-                    "%.0f",
-                    uiState.coveragePercent
-                )
-            }%"
-        )
-        Button(
-            onClick = onExport,
-            enabled = uiState.framesCaptured > 0
+private fun CaptureActiveContent(
+    uiState: CaptureUiState,
+    cameraRenderer: GLSurfaceView.Renderer,
+    onExport: () -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        ArCameraPreview(renderer = cameraRenderer, modifier = Modifier.fillMaxSize())
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Export")
+            Spacer(modifier = Modifier.weight(1f))
+            Text("Frames: ${uiState.framesCaptured}")
+            Text(
+                "Coverage: ${
+                    String.format(
+                        java.util.Locale.US,
+                        "%.0f",
+                        uiState.coveragePercent
+                    )
+                }%"
+            )
+            Button(
+                onClick = onExport,
+                enabled = uiState.framesCaptured > 0
+            ) {
+                Text("Export")
+            }
+            Spacer(modifier = Modifier.weight(1f))
         }
-        Spacer(modifier = Modifier.weight(1f))
     }
+}
+
+/**
+ * Embeds ARCore's camera passthrough feed. The [GLSurfaceView] is created once and paired with
+ * the composable's lifecycle: [GLSurfaceView.onPause]/[GLSurfaceView.onResume] stop and restart
+ * its GL thread so the camera isn't rendered (or ARCore's session pumped) while backgrounded.
+ */
+@Composable
+private fun ArCameraPreview(renderer: GLSurfaceView.Renderer, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val glSurfaceView = remember {
+        GLSurfaceView(context).apply {
+            setEGLContextClientVersion(2)
+            setRenderer(renderer)
+            renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        }
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, glSurfaceView) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> glSurfaceView.onResume()
+                Lifecycle.Event.ON_PAUSE -> glSurfaceView.onPause()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    AndroidView(factory = { glSurfaceView }, modifier = modifier)
+}
+
+private object NoOpGlRenderer : GLSurfaceView.Renderer {
+    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) = Unit
+    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) = Unit
+    override fun onDrawFrame(gl: GL10?) = Unit
 }
 
 @Composable
