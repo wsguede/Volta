@@ -37,3 +37,8 @@ pose, camera frames, and tracking state. The CameraX dependency is removed entir
   `session.update()`/the camera texture at a time, so #16 will need to consume frames from
   `ArCameraRepository`'s `Flow<ArFrame>` rather than owning its own `Session` — or this
   repository's headless-loop design will need to be revisited then.
+- `ArCameraRepository`'s background thread — and the native `Session`, EGL context, and GL
+  texture it owns — starts lazily on first `resume()` and then runs for the app's entire process
+  lifetime once started; there is no pause-forever/teardown path. This matches the exclusive-
+  ownership premise above (ARCore should hold the camera for as long as the app might need it)
+  but means the thread and its native resources are never released short of process death.
