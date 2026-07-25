@@ -90,6 +90,24 @@ class ArSessionOrchestratorTest {
 
         assertThat(delay).isEqualTo(ArSessionOrchestrator.PAUSED_POLL_INTERVAL_MS)
         assertThat(trackingLostCalls).isEqualTo(1)
+        assertThat(pauseSessionCalls).isEqualTo(1)
+    }
+
+    @Test
+    fun `re-resumes instead of repumping a broken session after camera loss mid-stream`() {
+        val loop = orchestrator()
+        loop.tick(isResumed = true)
+
+        pumpSessionResult = ArSessionOrchestrator.PumpResult.CAMERA_UNAVAILABLE
+        loop.tick(isResumed = true)
+
+        pumpSessionResult = ArSessionOrchestrator.PumpResult.PROCESSED
+        val delay = loop.tick(isResumed = true)
+
+        assertThat(createSessionCalls).isEqualTo(1)
+        assertThat(resumeSessionCalls).isEqualTo(2)
+        assertThat(pauseSessionCalls).isEqualTo(1)
+        assertThat(delay).isEqualTo(0L)
     }
 
     @Test

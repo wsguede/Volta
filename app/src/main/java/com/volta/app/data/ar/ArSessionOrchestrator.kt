@@ -35,7 +35,11 @@ internal class ArSessionOrchestrator<S>(
         return when (pumpSession(activeSession)) {
             PumpResult.PROCESSED, PumpResult.NO_NEW_FRAME -> 0L
             PumpResult.CAMERA_UNAVAILABLE -> {
-                onTrackingLost()
+                // ARCore doesn't self-heal a camera lost mid-stream by retrying update() alone —
+                // it needs an explicit pause()/resume() cycle to reopen the device. stop() pauses
+                // and clears isSessionResumed so the next tick's ensureResumed() re-resumes
+                // rather than handing the same broken session straight back to pumpSession.
+                stop()
                 PAUSED_POLL_INTERVAL_MS
             }
         }
