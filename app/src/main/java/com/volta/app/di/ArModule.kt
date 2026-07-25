@@ -1,7 +1,7 @@
 package com.volta.app.di
 
 import com.volta.app.data.ar.ArCameraRepository
-import com.volta.app.data.ar.ArSessionManager
+import com.volta.app.domain.ar.ArSessionManager
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn

@@ -10,12 +10,14 @@ import com.google.ar.core.Session
 import com.google.ar.core.exceptions.CameraNotAvailableException
 import com.google.ar.core.exceptions.NotYetAvailableException
 import com.google.ar.core.exceptions.UnavailableException
+import com.volta.app.domain.ar.ArSessionManager
 import com.volta.app.domain.model.ArFrame
 import com.volta.app.domain.model.DevicePose
 import com.volta.app.domain.model.TrackingState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -28,12 +30,18 @@ import timber.log.Timber
  * Owns the ARCore [Session] end-to-end via a headless (non-rendering) update loop on a dedicated
  * background thread. Does not depend on a UI-owned GLSurfaceView — see ADR 0013 and the note on
  * issue #16 about camera-texture ownership once the on-screen renderer is built.
+ *
+ * `@Singleton` at the class level (in addition to [com.volta.app.di.ArModule]'s `@Binds`) is
+ * required: ARCore needs exclusive camera ownership (ADR 0013), so a second unscoped instance
+ * would spin up a second native `Session`, EGL context, and polling thread.
  */
+@Singleton
 class ArCameraRepository @Inject constructor(@ApplicationContext private val context: Context) :
     ArSessionManager {
 
     private val resumed = AtomicBoolean(false)
-    private var session: Session? = null
+    private val threadStarted = AtomicBoolean(false)
+    private val sessionThread by lazy { ArSessionThread() }
 
     private val _isAvailable = MutableStateFlow(false)
 
@@ -57,12 +65,11 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
     private val _trackingState = MutableStateFlow<TrackingState>(TrackingState.NotTracking)
     override val trackingState: Flow<TrackingState> = _trackingState.asStateFlow()
 
-    init {
-        ArSessionThread().start()
-    }
-
     override fun resume() {
         resumed.set(true)
+        if (threadStarted.compareAndSet(false, true)) {
+            sessionThread.start()
+        }
     }
 
     override fun pause() {
@@ -114,11 +121,19 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
     }
 
     // Deliberately a non-daemon Thread with no stop path: this repository is a @Singleton that
-    // owns the ARCore session for the app's entire process lifetime, so the thread is meant to
-    // run until process death — there is no teardown call site to join/interrupt it against.
+    // owns the ARCore session for the app's entire process lifetime, so the thread — and the GL
+    // texture/EGL surface/context it creates — are meant to live until process death. There is
+    // no teardown call site to join/interrupt/release them against.
     private inner class ArSessionThread : Thread(THREAD_NAME) {
-        private var wasResumed = false
-        private var isSessionResumed = false
+
+        private val orchestrator = ArSessionOrchestrator(
+            createSession = ::createRealSession,
+            resumeSession = ::resumeRealSession,
+            pauseSession = { it.pause() },
+            pumpSession = ::pumpRealSession,
+            onAvailabilityChanged = { available -> _isAvailable.value = available },
+            onTrackingLost = { _trackingState.value = TrackingState.NotTracking }
+        )
 
         @Suppress("TooGenericExceptionCaught")
         override fun run() {
@@ -129,65 +144,42 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
                 return
             }
             while (true) {
-                runCatching { tick() }.onFailure { unexpected ->
-                    Timber.e(unexpected, "Unexpected error in the ARCore session loop")
-                    Thread.sleep(PAUSED_POLL_INTERVAL_MS)
-                }
+                val delayMs = runCatching { orchestrator.tick(resumed.get()) }
+                    .onFailure { unexpected ->
+                        Timber.e(unexpected, "Unexpected error in the ARCore session loop")
+                    }
+                    .getOrDefault(ArSessionOrchestrator.PAUSED_POLL_INTERVAL_MS)
+                Thread.sleep(delayMs)
             }
         }
 
-        private fun tick() {
-            val isResumed = resumed.get()
-            if (!isResumed && wasResumed) stopSession()
-            wasResumed = isResumed
-
-            val activeSession = if (isResumed) ensureSessionResumed() else null
-            if (activeSession != null) {
-                pumpSession(activeSession)
-            } else {
-                Thread.sleep(PAUSED_POLL_INTERVAL_MS)
-            }
-        }
-
-        private fun ensureSessionResumed(): Session? {
-            val activeSession = session ?: createSession()?.also { session = it } ?: return null
-            if (isSessionResumed) return activeSession
-            return try {
-                activeSession.resume()
-                isSessionResumed = true
-                activeSession
-            } catch (cameraUnavailable: CameraNotAvailableException) {
-                Timber.w(cameraUnavailable, "Camera unavailable while resuming ARCore session")
-                null
-            }
-        }
-
-        private fun stopSession() {
-            session?.pause()
-            isSessionResumed = false
-            _trackingState.value = TrackingState.NotTracking
-        }
-
-        private fun createSession(): Session? = try {
+        private fun createRealSession(): Session? = try {
             Session(context).also { it.setCameraTextureName(createExternalTexture()) }
-                .also { _isAvailable.value = true }
         } catch (unavailable: UnavailableException) {
             Timber.e(unavailable, "ARCore session unavailable on this device")
-            _isAvailable.value = false
             null
         }
 
-        private fun pumpSession(activeSession: Session) {
+        private fun resumeRealSession(activeSession: Session): Boolean = try {
+            activeSession.resume()
+            true
+        } catch (cameraUnavailable: CameraNotAvailableException) {
+            Timber.w(cameraUnavailable, "Camera unavailable while resuming ARCore session")
+            false
+        }
+
+        private fun pumpRealSession(activeSession: Session): ArSessionOrchestrator.PumpResult =
             try {
                 processFrame(activeSession.update())
+                ArSessionOrchestrator.PumpResult.PROCESSED
             } catch (expected: NotYetAvailableException) {
                 // No new frame since the last update() call — expected; ARCore paces this
                 // internally to the camera's actual frame rate.
+                ArSessionOrchestrator.PumpResult.NO_NEW_FRAME
             } catch (cameraUnavailable: CameraNotAvailableException) {
                 Timber.w(cameraUnavailable, "Camera unavailable during ARCore session update")
-                _trackingState.value = TrackingState.NotTracking
+                ArSessionOrchestrator.PumpResult.CAMERA_UNAVAILABLE
             }
-        }
 
         private fun processFrame(frame: Frame) {
             val camera = frame.camera
@@ -233,6 +225,5 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
 
     companion object {
         private const val THREAD_NAME = "ArCameraRepository-GLThread"
-        private const val PAUSED_POLL_INTERVAL_MS = 100L
     }
 }
