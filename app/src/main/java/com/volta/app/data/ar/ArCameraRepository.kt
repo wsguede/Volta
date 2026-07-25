@@ -126,10 +126,9 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         }
 
         private fun startSession() {
-            val activeSession = session ?: createSession() ?: return
+            val activeSession = session ?: createSession()?.also { session = it } ?: return
             try {
                 activeSession.resume()
-                session = activeSession
             } catch (cameraUnavailable: CameraNotAvailableException) {
                 Timber.w(cameraUnavailable, "Camera unavailable while resuming ARCore session")
             }
