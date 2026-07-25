@@ -36,6 +36,9 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
     private var session: Session? = null
 
     private val _isAvailable = MutableStateFlow(false)
+
+    /** True once an ARCore [Session] has been constructed — not a guarantee the camera is
+     * actively streaming; consult [trackingState] for live streaming/tracking status. */
     override val isAvailable: Flow<Boolean> = _isAvailable.asStateFlow()
 
     private val _currentPose = MutableSharedFlow<DevicePose>(
@@ -110,32 +113,58 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         ) { "Unable to make the EGL context current" }
     }
 
+    // Deliberately a non-daemon Thread with no stop path: this repository is a @Singleton that
+    // owns the ARCore session for the app's entire process lifetime, so the thread is meant to
+    // run until process death — there is no teardown call site to join/interrupt it against.
     private inner class ArSessionThread : Thread(THREAD_NAME) {
         private var wasResumed = false
+        private var isSessionResumed = false
 
+        @Suppress("TooGenericExceptionCaught")
         override fun run() {
-            initializeGl()
+            try {
+                initializeGl()
+            } catch (unexpected: Exception) {
+                Timber.e(unexpected, "Failed to initialize the headless EGL context for ARCore")
+                return
+            }
             while (true) {
-                val isResumed = resumed.get()
-                if (isResumed && !wasResumed) startSession()
-                if (!isResumed && wasResumed) stopSession()
-                wasResumed = isResumed
-
-                if (isResumed) pumpSession() else Thread.sleep(PAUSED_POLL_INTERVAL_MS)
+                runCatching { tick() }.onFailure { unexpected ->
+                    Timber.e(unexpected, "Unexpected error in the ARCore session loop")
+                }
             }
         }
 
-        private fun startSession() {
-            val activeSession = session ?: createSession()?.also { session = it } ?: return
-            try {
+        @Suppress("TooGenericExceptionCaught")
+        private fun tick() {
+            val isResumed = resumed.get()
+            if (!isResumed && wasResumed) stopSession()
+            wasResumed = isResumed
+
+            val activeSession = if (isResumed) ensureSessionResumed() else null
+            if (activeSession != null) {
+                pumpSession(activeSession)
+            } else {
+                Thread.sleep(PAUSED_POLL_INTERVAL_MS)
+            }
+        }
+
+        private fun ensureSessionResumed(): Session? {
+            val activeSession = session ?: createSession()?.also { session = it } ?: return null
+            if (isSessionResumed) return activeSession
+            return try {
                 activeSession.resume()
+                isSessionResumed = true
+                activeSession
             } catch (cameraUnavailable: CameraNotAvailableException) {
                 Timber.w(cameraUnavailable, "Camera unavailable while resuming ARCore session")
+                null
             }
         }
 
         private fun stopSession() {
             session?.pause()
+            isSessionResumed = false
             _trackingState.value = TrackingState.NotTracking
         }
 
@@ -148,8 +177,7 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
             null
         }
 
-        private fun pumpSession() {
-            val activeSession = session ?: return
+        private fun pumpSession(activeSession: Session) {
             try {
                 processFrame(activeSession.update())
             } catch (expected: NotYetAvailableException) {
