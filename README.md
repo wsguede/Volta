@@ -144,7 +144,7 @@ Volta follows **MVVM with Jetpack Compose** and unidirectional data flow.
 │  BlurDetector · CoverageTracker · Stitching  │
 ├──────────────────────────────────────────────┤
 │  Data Layer (Android/SDK)                    │
-│  CameraX · ARCore · GPS · MediaStore         │
+│  ARCore · GPS · MediaStore                   │
 └──────────────────────────────────────────────┘
 ```
 
@@ -152,10 +152,10 @@ Volta follows **MVVM with Jetpack Compose** and unidirectional data flow.
 |---|---|---|
 | `ui/` | Composables and ViewModels | May depend on `domain/` and Android framework |
 | `domain/` | Business logic | **No Android imports** — pure Kotlin only |
-| `data/` | Hardware and OS access | Camera, AR, GPS, file system |
+| `data/` | Hardware and OS access | Camera (via ARCore), GPS, file system |
 | `di/` | Hilt dependency injection | Wires all layers together |
 
-See [`docs/adr/`](docs/adr/) for architecture decision records explaining key choices (MVVM, Hilt, CameraX, OpenCV, Coroutines, Android-first).
+See [`docs/adr/`](docs/adr/) for architecture decision records explaining key choices (MVVM, Hilt, ARCore, OpenCV, Coroutines, Android-first).
 
 ---
 
@@ -169,12 +169,12 @@ app/src/main/java/com/volta/app/
 │   ├── settings/      # Resolution preferences
 │   └── theme/         # Material 3 dark theme
 ├── domain/
+│   ├── ar/            # ArSessionManager (ARCore session data source interface)
 │   ├── capture/       # Frame analysis, blur detection
 │   ├── coverage/      # Sphere coverage tracking
 │   └── stitching/     # Stitching orchestration
 ├── data/
-│   ├── camera/        # CameraX integration
-│   ├── ar/            # ARCore session management
+│   ├── ar/            # ARCore camera integration (owns the camera exclusively — see ADR 0013)
 │   ├── gps/           # Location services
 │   └── export/        # MediaStore / file system
 ├── di/                # Hilt modules
@@ -224,8 +224,7 @@ See [AGENTS.md](AGENTS.md) for full code style, naming conventions, and project 
 | UI | Jetpack Compose + Material 3 |
 | Architecture | MVVM + StateFlow |
 | DI | Hilt (KSP) |
-| Camera | CameraX |
-| AR | ARCore |
+| Camera & AR | ARCore |
 | Stitching | OpenCV (planned) |
 | Async | Kotlin Coroutines + Flow |
 | Logging | Timber |
