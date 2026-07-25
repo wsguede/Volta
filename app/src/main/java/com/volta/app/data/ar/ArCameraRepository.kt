@@ -131,11 +131,11 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
             while (true) {
                 runCatching { tick() }.onFailure { unexpected ->
                     Timber.e(unexpected, "Unexpected error in the ARCore session loop")
+                    Thread.sleep(PAUSED_POLL_INTERVAL_MS)
                 }
             }
         }
 
-        @Suppress("TooGenericExceptionCaught")
         private fun tick() {
             val isResumed = resumed.get()
             if (!isResumed && wasResumed) stopSession()
