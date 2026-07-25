@@ -62,4 +62,12 @@ class CaptureViewModel @Inject constructor(
         val status = if (granted) CaptureGpsStatus.Acquiring else CaptureGpsStatus.Unavailable
         _uiState.update { it.copy(gpsStatus = status) }
     }
+
+    /** [arSessionManager] is a process-lifetime `@Singleton` with no lifecycle of its own, so it
+     * must be paused explicitly when this screen's ViewModel goes away — otherwise navigating to
+     * another screen within the app (which never fires Activity `ON_PAUSE`) would leave the
+     * camera reserved indefinitely. */
+    override fun onCleared() {
+        arSessionManager.pause()
+    }
 }

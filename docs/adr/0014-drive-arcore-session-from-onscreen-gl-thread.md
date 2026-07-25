@@ -26,13 +26,18 @@ access while the capture screen isn't visible — the PRD's only flow is open ap
 Move Session/EGL/texture ownership into the GL thread that `GLSurfaceView` itself creates and
 manages. `ArCameraRepository` implements `android.opengl.GLSurfaceView.Renderer` directly:
 
-- `onSurfaceCreated` creates the external OES camera texture and constructs the ARCore `Session`
-  bound to it, exactly as the old `ArSessionThread.createRealSession` did.
-- `onSurfaceChanged` calls `session.setDisplayGeometry(rotation, width, height)` so ARCore can
-  correct for device/display orientation.
+- `onSurfaceCreated` creates the external OES camera texture (and rebinds it to any already-live
+  `Session` if the GL surface was torn down and recreated, e.g. across a backgrounding cycle).
+- `onSurfaceChanged` records the current display rotation/size for `session.setDisplayGeometry` to
+  use so ARCore can correct for device/display orientation.
 - `onDrawFrame` drives the existing `ArSessionOrchestrator.tick(isResumed)` state machine — that
   class is pure and thread-agnostic, so it is reused unmodified — and draws the camera passthrough
-  quad when a session is active.
+  quad when a session is active. The ARCore `Session` itself is still constructed lazily, the same
+  way the old `ArSessionThread.createRealSession` did it: on the first `onDrawFrame` tick after
+  `resume()`, not in `onSurfaceCreated`. Opening the session this way on the render thread can
+  produce a brief visible hitch on (re)creation — the same trade-off ARCore's own HelloAR sample
+  makes by driving the session from `onDrawFrame` — but that's judged acceptable since it happens
+  at most once per screen visit (session resume), not per frame.
 
 `GLSurfaceView` calls `onDrawFrame` continuously at the display refresh rate (~60 Hz) rather than
 on a sleep-controlled loop, so a small `TickScheduler` gate (elapsed-time check against the delay

@@ -20,10 +20,14 @@ consumers.
 ## Decision
 
 ARCore owns the camera exclusively for the capture screen. `ArCameraRepository` (`data/ar/`)
-wraps ARCore's `Session`, driving a headless (non-rendering) update loop that exposes device
-pose, camera frames, and tracking state. The CameraX dependency is removed entirely:
-`CameraRepository`, `CameraModule`, and the `camerax-*` entries in `gradle/libs.versions.toml` /
-`app/build.gradle.kts` are deleted.
+wraps ARCore's `Session`, driving an update loop that exposes device pose, camera frames, and
+tracking state. The CameraX dependency is removed entirely: `CameraRepository`, `CameraModule`,
+and the `camerax-*` entries in `gradle/libs.versions.toml` / `app/build.gradle.kts` are deleted.
+
+At the time this ADR was written, that update loop was headless (non-rendering), driven by a
+dedicated background thread with its own off-screen EGL surface — see the now-resolved follow-up
+below. ADR 0014 replaced that threading/EGL-ownership detail; the decision on this page (ARCore
+over CameraX, exclusive camera ownership) is unaffected and still stands.
 
 ## Consequences
 
@@ -32,13 +36,10 @@ pose, camera frames, and tracking state. The CameraX dependency is removed entir
   required feature declaration.
 - One fewer camera-access path to reason about — no risk of CameraX and ARCore contending for the
   same camera.
-- Open follow-up: when issue #16 (AR capture screen — on-screen camera passthrough + sphere
-  overlay) is implemented, it needs camera image access too. ARCore only allows one owner of
-  `session.update()`/the camera texture at a time, so #16 will need to consume frames from
-  `ArCameraRepository`'s `Flow<ArFrame>` rather than owning its own `Session` — or this
-  repository's headless-loop design will need to be revisited then.
-- `ArCameraRepository`'s background thread — and the native `Session`, EGL context, and GL
-  texture it owns — starts lazily on first `resume()` and then runs for the app's entire process
-  lifetime once started; there is no pause-forever/teardown path. This matches the exclusive-
-  ownership premise above (ARCore should hold the camera for as long as the app might need it)
-  but means the thread and its native resources are never released short of process death.
+- Resolved: issue #16 (AR capture screen — on-screen camera passthrough + sphere overlay) needed
+  camera image access too, and ARCore only allows one owner of `session.update()`/the camera
+  texture at a time. This was resolved by moving Session/EGL/texture ownership onto the on-screen
+  `GLSurfaceView`'s own render thread rather than the headless background thread described above —
+  see ADR 0014 for the full decision and its own consequences (notably, the camera preview now has
+  no life-cycle independent of the capture screen's `GLSurfaceView`, which was not true of the
+  original headless design).

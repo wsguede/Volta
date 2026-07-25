@@ -34,6 +34,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -191,7 +192,13 @@ private fun ArSessionLifecycleObserver(onResume: () -> Unit, onPause: () -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            // Navigating to another screen within the app leaves the Activity (and its
+            // Lifecycle) resumed — ON_PAUSE above never fires — but this composable still
+            // leaves composition, so pause here too or the ARCore session stays reserved.
+            currentOnPause.value()
+        }
     }
 }
 
@@ -297,6 +304,11 @@ private fun CaptureActiveContent(
  */
 @Composable
 private fun ArCameraPreview(renderer: GLSurfaceView.Renderer, modifier: Modifier = Modifier) {
+    if (LocalInspectionMode.current) {
+        // GLSurfaceView doesn't run in layoutlib's static preview renderer.
+        Box(modifier = modifier)
+        return
+    }
     val context = LocalContext.current
     val glSurfaceView = remember {
         GLSurfaceView(context).apply {

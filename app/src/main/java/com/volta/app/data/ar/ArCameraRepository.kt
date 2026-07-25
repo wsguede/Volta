@@ -4,6 +4,8 @@ import android.content.Context
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
+import android.view.Surface
+import android.view.WindowManager
 import com.google.ar.core.Frame
 import com.google.ar.core.Session
 import com.google.ar.core.exceptions.CameraNotAvailableException
@@ -55,6 +57,7 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
     private var hasRenderableFrame = false
     private var displayWidth = 0
     private var displayHeight = 0
+    private var displayRotation = Surface.ROTATION_0
     private var displayGeometryDirty = false
 
     private val _isAvailable = MutableStateFlow(false)
@@ -85,7 +88,12 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         pauseSession = { it.pause() },
         pumpSession = ::pumpRealSession,
         onAvailabilityChanged = { available -> _isAvailable.value = available },
-        onTrackingLost = { _trackingState.value = TrackingState.NotTracking }
+        onTrackingLost = {
+            _trackingState.value = TrackingState.NotTracking
+            // Otherwise the last successfully drawn frame stays frozen on screen with no cue
+            // that the camera/tracking was actually lost.
+            hasRenderableFrame = false
+        }
     )
 
     override fun resume() {
@@ -110,6 +118,7 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         GLES20.glViewport(0, 0, width, height)
         displayWidth = width
         displayHeight = height
+        displayRotation = currentDisplayRotation()
         displayGeometryDirty = true
     }
 
@@ -130,6 +139,16 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         }
     }
 
+    // WindowManager.getDefaultDisplay() is deprecated in favor of a Display obtained from a
+    // UI-associated Context, which @ApplicationContext is not (Context.getDisplay() throws
+    // UnsupportedOperationException on it). The deprecated API still returns the correct rotation
+    // for Volta's single-display, single-window use case.
+    @Suppress("DEPRECATION")
+    private fun currentDisplayRotation(): Int {
+        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        return windowManager.defaultDisplay.rotation
+    }
+
     private fun createExternalTexture(): Int {
         val textureIds = IntArray(1)
         GLES20.glGenTextures(1, textureIds, 0)
@@ -147,20 +166,20 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         null
     }
 
-    private fun resumeRealSession(activeSession: Session): Boolean = try {
-        activeSession.resume()
+    private fun resumeRealSession(session: Session): Boolean = try {
+        session.resume()
         true
     } catch (cameraUnavailable: CameraNotAvailableException) {
         Timber.w(cameraUnavailable, "Camera unavailable while resuming ARCore session")
         false
     }
 
-    private fun pumpRealSession(activeSession: Session): ArSessionOrchestrator.PumpResult = try {
+    private fun pumpRealSession(session: Session): ArSessionOrchestrator.PumpResult = try {
         if (displayGeometryDirty && displayWidth > 0 && displayHeight > 0) {
-            activeSession.setDisplayGeometry(DISPLAY_ROTATION, displayWidth, displayHeight)
+            session.setDisplayGeometry(displayRotation, displayWidth, displayHeight)
             displayGeometryDirty = false
         }
-        processFrame(activeSession.update())
+        processFrame(session.update())
         ArSessionOrchestrator.PumpResult.PROCESSED
     } catch (expected: NotYetAvailableException) {
         // No new frame since the last update() call — expected; ARCore paces this
@@ -214,12 +233,5 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         } finally {
             image.close()
         }
-    }
-
-    private companion object {
-        // MainActivity is locked to android:screenOrientation="portrait" (AndroidManifest.xml),
-        // so the display rotation relative to the natural orientation is fixed for the app's
-        // entire lifetime — no DisplayListener/rotation-change tracking is needed.
-        const val DISPLAY_ROTATION = android.view.Surface.ROTATION_0
     }
 }
