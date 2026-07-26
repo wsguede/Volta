@@ -47,8 +47,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.volta.app.ui.theme.VoltaTheme
 import com.volta.app.ui.util.findComponentActivity
 import com.volta.app.ui.util.openAppSettings
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import timber.log.Timber
 
 @Composable
 fun CaptureScreen(
@@ -84,17 +87,6 @@ fun CaptureScreen(
         cameraPermission = uiState.cameraPermission,
         onCameraPermissionResult = viewModel::onCameraPermissionResult,
         onLocationPermissionResult = viewModel::onLocationPermissionResult
-    )
-
-    // Two separate LifecycleEventObservers both react to ON_RESUME here. Their relative order
-    // doesn't matter for correctness: if this one runs before PermissionsResumeObserver's on a
-    // given ON_RESUME, onScreenResumed() may read a not-yet-updated cameraPermission and skip
-    // resume() — but PermissionsResumeObserver's onCameraPermissionResult(granted = true) calls
-    // arSessionManager.resume() directly too, so the same ON_RESUME dispatch still resumes the
-    // session regardless of which observer runs first.
-    ArSessionLifecycleObserver(
-        onResume = viewModel::onScreenResumed,
-        onPause = viewModel::onScreenPaused
     )
 
     CaptureContent(
@@ -177,30 +169,6 @@ private fun checkAndRequestInitialPermissions(
     }
     if (toRequest.isNotEmpty()) {
         requestPermissions(toRequest.toTypedArray())
-    }
-}
-
-@Composable
-private fun ArSessionLifecycleObserver(onResume: () -> Unit, onPause: () -> Unit) {
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val currentOnResume = rememberUpdatedState(onResume)
-    val currentOnPause = rememberUpdatedState(onPause)
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_RESUME -> currentOnResume.value()
-                Lifecycle.Event.ON_PAUSE -> currentOnPause.value()
-                else -> Unit
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            // Navigating to another screen within the app leaves the Activity (and its
-            // Lifecycle) resumed — ON_PAUSE above never fires — but this composable still
-            // leaves composition, so pause here too or the ARCore session stays reserved.
-            currentOnPause.value()
-        }
     }
 }
 
@@ -311,19 +279,21 @@ private fun CaptureActiveContent(
 }
 
 /**
- * Embeds ARCore's camera passthrough feed. The [GLSurfaceView] is created once and paired with
- * the composable's lifecycle: [GLSurfaceView.onPause]/[GLSurfaceView.onResume] stop and restart
- * its GL thread so the camera isn't rendered (or ARCore's session pumped) while backgrounded.
+ * Embeds ARCore's camera passthrough feed and is the single authoritative trigger for the
+ * ARCore session's pause/resume (see ADR 0014) — [onScreenResumed]/[onScreenPaused] are called
+ * from here, not from a separate Activity-lifecycle observer, since this composable is only ever
+ * part of the composition while camera permission is granted (the same condition under which
+ * those calls do anything), and colocating them with [GLSurfaceView.onPause]/
+ * [GLSurfaceView.onResume] removes any dependency on disposal ordering between unrelated
+ * composables.
  *
- * [onScreenResumed]/[onScreenPaused] (the domain-level ARCore session pause/resume, gated on
- * [GLSurfaceView.onResume]/[GLSurfaceView.onPause] here rather than left to the separate
- * Activity-lifecycle observer in [CaptureScreen]: that observer's `ON_PAUSE` never fires when
- * navigating to another screen *within* the app, and racing this composable's own teardown
- * against a separate composable's `onDispose` isn't a reliable way to guarantee the session is
- * actually paused before the `GLSurfaceView`'s render thread is torn down. Calling both here, in
- * this order, in this composable's own `onDispose`, removes that race: [onScreenPaused] flips the
- * domain `resumed` flag before the blocking [GLSurfaceView.onPause] call gives the render thread
- * one more `onDrawFrame` tick to observe it and actually call `Session.pause()`.
+ * Pausing is flushed through the GL thread deterministically rather than assumed: `Session.pause()`
+ * only happens inside `ArSessionOrchestrator.tick()`, called from `onDrawFrame` — and
+ * [GLSurfaceView.onPause] only blocks until the render thread *acknowledges* a pause request, not
+ * until it has drawn one more frame with the just-updated `resumed = false`. [flushPauseThroughGlThread]
+ * closes that gap by directly invoking [renderer]'s `onDrawFrame` via [GLSurfaceView.queueEvent] —
+ * queued events run before the render loop's next pause/exit check — and blocking until it
+ * completes, before calling [GLSurfaceView.onPause].
  */
 @Composable
 private fun ArCameraPreview(
@@ -349,27 +319,52 @@ private fun ArCameraPreview(
     val currentOnScreenResumed = rememberUpdatedState(onScreenResumed)
     val currentOnScreenPaused = rememberUpdatedState(onScreenPaused)
     DisposableEffect(lifecycleOwner, glSurfaceView) {
+        fun pause() {
+            currentOnScreenPaused.value()
+            flushPauseThroughGlThread(glSurfaceView, renderer)
+            glSurfaceView.onPause()
+        }
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
                     currentOnScreenResumed.value()
                     glSurfaceView.onResume()
                 }
-                Lifecycle.Event.ON_PAUSE -> {
-                    currentOnScreenPaused.value()
-                    glSurfaceView.onPause()
-                }
+                Lifecycle.Event.ON_PAUSE -> pause()
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            currentOnScreenPaused.value()
-            glSurfaceView.onPause()
+            pause()
         }
     }
     AndroidView(factory = { glSurfaceView }, modifier = modifier)
+}
+
+/**
+ * Blocks until [renderer]'s `onDrawFrame` has run once more on [glSurfaceView]'s GL thread, so a
+ * `resumed = false` write that happened-before this call is guaranteed to be observed by
+ * `ArSessionOrchestrator.tick()` before the caller proceeds to pause or tear down the render
+ * thread. `onDrawFrame`'s `GL10` parameter is unused by [ArCameraRepository][com.volta.app.data.ar.ArCameraRepository]
+ * (all GL calls go through the current context via the static `GLES20`/`GLES11Ext` APIs), so
+ * passing `null` here is safe.
+ */
+private fun flushPauseThroughGlThread(
+    glSurfaceView: GLSurfaceView,
+    renderer: GLSurfaceView.Renderer
+) {
+    val flushed = CountDownLatch(1)
+    glSurfaceView.queueEvent {
+        renderer.onDrawFrame(null)
+        flushed.countDown()
+    }
+    // 250ms: comfortably above the sub-frame time a queued GL call should take to run, while
+    // still short enough not to risk an ANR if something goes wrong.
+    if (!flushed.await(250L, TimeUnit.MILLISECONDS)) {
+        Timber.w("Timed out waiting for the ARCore session pause to flush through the GL thread")
+    }
 }
 
 private object NoOpGlRenderer : GLSurfaceView.Renderer {

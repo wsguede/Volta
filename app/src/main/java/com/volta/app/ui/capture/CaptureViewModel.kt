@@ -1,6 +1,7 @@
 package com.volta.app.ui.capture
 
 import android.opengl.GLSurfaceView
+import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.ViewModel
 import com.volta.app.domain.ar.ArSessionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -63,10 +64,17 @@ class CaptureViewModel @Inject constructor(
         _uiState.update { it.copy(gpsStatus = status) }
     }
 
-    /** [arSessionManager] is a process-lifetime `@Singleton` with no lifecycle of its own, so it
-     * must be paused explicitly when this screen's ViewModel goes away — otherwise navigating to
-     * another screen within the app (which never fires Activity `ON_PAUSE`) would leave the
-     * camera reserved indefinitely. */
+    /** Defense-in-depth: [arSessionManager] is a process-lifetime `@Singleton` with no lifecycle
+     * of its own, so if this ViewModel is ever cleared while a session is active, pause it here
+     * too. Currently unreachable via [com.volta.app.navigation.VoltaNavGraph]'s nav graph — it
+     * never pops the capture destination, so its `ViewModelStore` (and this method) never clears
+     * on ordinary navigation. The actual fix for the in-app-navigation camera leak lives in
+     * `ArCameraPreview`'s own `onDispose`, in `CaptureScreen.kt`, which fires on every
+     * composable's teardown regardless of the ViewModel's lifecycle.
+     *
+     * Visibility is widened from `protected` only so this can be unit tested directly, per
+     * [VisibleForTesting] — not intended to be called outside tests. */
+    @VisibleForTesting(otherwise = VisibleForTesting.PROTECTED)
     public override fun onCleared() {
         arSessionManager.pause()
     }

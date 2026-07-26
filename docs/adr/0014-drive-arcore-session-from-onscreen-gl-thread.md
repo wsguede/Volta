@@ -66,9 +66,24 @@ dependency rule without `ui/` depending on `data/`.
   tracking state. Callers that only inject `ArSessionManager` (e.g. a future capture-trigger
   consumer) implicitly depend on the capture screen having created and attached the
   `GLSurfaceView` first.
-- `GLSurfaceView.onPause()`/`onResume()` must be called from the capture screen's lifecycle
-  observer, paired with the existing `ArSessionManager.pause()`/`resume()` calls, or the GL thread
-  keeps rendering (and ARCore keeps pumping frames) while the app is backgrounded.
+- `GLSurfaceView.onPause()`/`onResume()` must be paired with `ArSessionManager.pause()`/`resume()`,
+  or the GL thread keeps rendering (and ARCore keeps pumping frames) while the app is backgrounded.
+  `ArCameraPreview` (`CaptureScreen.kt`) is the single authoritative trigger for both — an earlier
+  version of this design also paused/resumed from a separate Activity-lifecycle observer, but that
+  observer's calls were redundant everywhere they mattered (this composable exists only when
+  camera permission is granted, the same condition under which the observer's calls did anything)
+  and their independent teardown timing relative to this composable's own `onDispose` was an actual
+  source of a camera-reservation bug, not just redundancy. Do not reintroduce a second trigger
+  point without removing this one.
+- Calling `GLSurfaceView.onPause()` alone does not guarantee `Session.pause()` runs first: it only
+  blocks until the render thread *acknowledges* the pause request, not until it has drawn one more
+  frame with an updated `resumed = false`. `Session.pause()` only happens inside
+  `ArSessionOrchestrator.tick()`, called from `onDrawFrame`. `ArCameraPreview` closes this gap by
+  calling `GLSurfaceView.queueEvent { renderer.onDrawFrame(null) }` and blocking on a latch until
+  that runs — queued events are drained on the render thread ahead of its next pause/exit check —
+  before calling `GLSurfaceView.onPause()`. This has not been verified with an instrumentation test
+  against a real device; it is reasoned from `GLSurfaceView`'s documented `queueEvent` contract, not
+  empirically confirmed.
 - This ADR covers only the passthrough camera quad — the sphere coverage overlay, frame counter,
   and coverage percentage from issue #16's full acceptance criteria are deferred to follow-up work
   once #10 (frame capture trigger) and #11 (blur detection) exist to supply real data.
