@@ -42,6 +42,12 @@ class CaptureViewModel @Inject constructor(
         arSessionManager.pause()
     }
 
+    /** Must be called on the `GLSurfaceView`'s GL thread after [onScreenPaused] — see
+     * [ArSessionManager.flushPendingPause]. */
+    fun flushSessionPause() {
+        arSessionManager.flushPendingPause()
+    }
+
     fun onCameraPermissionResult(granted: Boolean, isPermanentlyDenied: Boolean) {
         val permission = when {
             granted -> CapturePermissionState.Granted

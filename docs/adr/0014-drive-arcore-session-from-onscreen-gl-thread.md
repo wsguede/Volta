@@ -79,11 +79,18 @@ dependency rule without `ui/` depending on `data/`.
   blocks until the render thread *acknowledges* the pause request, not until it has drawn one more
   frame with an updated `resumed = false`. `Session.pause()` only happens inside
   `ArSessionOrchestrator.tick()`, called from `onDrawFrame`. `ArCameraPreview` closes this gap by
-  calling `GLSurfaceView.queueEvent { renderer.onDrawFrame(null) }` and blocking on a latch until
-  that runs — queued events are drained on the render thread ahead of its next pause/exit check —
-  before calling `GLSurfaceView.onPause()`. This has not been verified with an instrumentation test
-  against a real device; it is reasoned from `GLSurfaceView`'s documented `queueEvent` contract, not
-  empirically confirmed.
+  calling `GLSurfaceView.queueEvent { ... }` and blocking on a latch until that runs — queued events
+  are drained on the render thread ahead of its next pause/exit check — before calling
+  `GLSurfaceView.onPause()`. This has not been verified with an instrumentation test against a real
+  device; it is reasoned from `GLSurfaceView`'s documented `queueEvent` contract, not empirically
+  confirmed.
+  - The queued call must not be a plain `renderer.onDrawFrame(null)`: `onDrawFrame`'s normal path
+    gates `orchestrator.tick()` behind `TickScheduler.shouldTick()`, which stays `false` while a
+    scheduled retry is still pending (mid-backoff after `CAMERA_UNAVAILABLE`, or up to
+    `PAUSED_POLL_INTERVAL_MS` after any prior tick). A forced `onDrawFrame(null)` call landing in
+    that window would silently skip `tick()` entirely while the latch still counts down, giving
+    false confidence the pause landed. `ArSessionManager.flushPendingPause()` exists specifically
+    to bypass `TickScheduler` for this one-shot flush — it must not go through `onDrawFrame`.
 - This ADR covers only the passthrough camera quad — the sphere coverage overlay, frame counter,
   and coverage percentage from issue #16's full acceptance criteria are deferred to follow-up work
   once #10 (frame capture trigger) and #11 (blur detection) exist to supply real data.

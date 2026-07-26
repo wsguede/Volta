@@ -104,6 +104,24 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         resumed.set(false)
     }
 
+    /**
+     * Must be called on the GL thread (e.g. via `GLSurfaceView.queueEvent`) — calls
+     * [ArSessionOrchestrator.tick] directly, deliberately bypassing [tickScheduler]. Unlike
+     * [onDrawFrame]'s normal per-frame ticking, this exists specifically to guarantee
+     * `Session.pause()` has actually run after [pause], and [tickScheduler] gating it would
+     * defeat that: mid-backoff (a scheduled retry still pending, up to
+     * [ArSessionOrchestrator.UNAVAILABLE_RETRY_INTERVAL_MS] away), [TickScheduler.shouldTick]
+     * would return `false` and a caller invoking this via [onDrawFrame] instead would silently
+     * no-op while believing the pause had landed.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    override fun flushPendingPause() {
+        runCatching { orchestrator.tick(resumed.get()) }
+            .onFailure { unexpected ->
+                Timber.e(unexpected, "Unexpected error flushing a pending ARCore session pause")
+            }
+    }
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         cameraTextureId = createExternalTexture()
         cameraQuadRenderer.createOnGlThread()

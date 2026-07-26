@@ -28,6 +28,8 @@ private class FakeArSessionManager : ArSessionManager {
         private set
     var pauseCalls = 0
         private set
+    var flushPendingPauseCalls = 0
+        private set
 
     override fun resume() {
         resumeCalls++
@@ -35,6 +37,10 @@ private class FakeArSessionManager : ArSessionManager {
 
     override fun pause() {
         pauseCalls++
+    }
+
+    override fun flushPendingPause() {
+        flushPendingPauseCalls++
     }
 }
 
@@ -225,6 +231,16 @@ class CaptureViewModelTest {
         viewModel.onCameraPermissionResult(granted = false, isPermanentlyDenied = true)
 
         assertThat(arSessionManager.pauseCalls).isEqualTo(1)
+    }
+
+    @Test
+    fun `flushSessionPause flushes the pending pause`() {
+        val arSessionManager = FakeArSessionManager()
+        val viewModel = viewModel(arSessionManager)
+
+        viewModel.flushSessionPause()
+
+        assertThat(arSessionManager.flushPendingPauseCalls).isEqualTo(1)
     }
 
     @Test

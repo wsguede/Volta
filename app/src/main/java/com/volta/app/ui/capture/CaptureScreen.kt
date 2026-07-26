@@ -94,6 +94,7 @@ fun CaptureScreen(
         cameraRenderer = viewModel.cameraRenderer,
         onScreenResumed = viewModel::onScreenResumed,
         onScreenPaused = viewModel::onScreenPaused,
+        flushSessionPause = viewModel::flushSessionPause,
         onExport = onExport,
         onSettings = onSettings,
         onRequestCameraPermission = {
@@ -181,6 +182,7 @@ internal fun CaptureContent(
     cameraRenderer: GLSurfaceView.Renderer = NoOpGlRenderer,
     onScreenResumed: () -> Unit = {},
     onScreenPaused: () -> Unit = {},
+    flushSessionPause: () -> Unit = {},
     onRequestCameraPermission: () -> Unit = {},
     onOpenAppSettings: () -> Unit = {}
 ) {
@@ -208,6 +210,7 @@ internal fun CaptureContent(
                     cameraRenderer = cameraRenderer,
                     onScreenResumed = onScreenResumed,
                     onScreenPaused = onScreenPaused,
+                    flushSessionPause = flushSessionPause,
                     onExport = onExport
                 )
                 CapturePermissionState.Denied -> CameraPermissionDeniedCard(
@@ -243,6 +246,7 @@ private fun CaptureActiveContent(
     cameraRenderer: GLSurfaceView.Renderer,
     onScreenResumed: () -> Unit,
     onScreenPaused: () -> Unit,
+    flushSessionPause: () -> Unit,
     onExport: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -250,6 +254,7 @@ private fun CaptureActiveContent(
             renderer = cameraRenderer,
             onScreenResumed = onScreenResumed,
             onScreenPaused = onScreenPaused,
+            flushSessionPause = flushSessionPause,
             modifier = Modifier.fillMaxSize()
         )
         Column(
@@ -288,18 +293,20 @@ private fun CaptureActiveContent(
  * composables.
  *
  * Pausing is flushed through the GL thread deterministically rather than assumed: `Session.pause()`
- * only happens inside `ArSessionOrchestrator.tick()`, called from `onDrawFrame` — and
- * [GLSurfaceView.onPause] only blocks until the render thread *acknowledges* a pause request, not
- * until it has drawn one more frame with the just-updated `resumed = false`. [flushPauseThroughGlThread]
- * closes that gap by directly invoking [renderer]'s `onDrawFrame` via [GLSurfaceView.queueEvent] —
- * queued events run before the render loop's next pause/exit check — and blocking until it
- * completes, before calling [GLSurfaceView.onPause].
+ * only happens inside `ArSessionOrchestrator.tick()`, and [GLSurfaceView.onPause] only blocks
+ * until the render thread *acknowledges* a pause request, not until `tick()` has actually run
+ * with the just-updated `resumed = false`. [flushPauseThroughGlThread] closes that gap by calling
+ * [flushSessionPause] via [GLSurfaceView.queueEvent] — queued events run before the render loop's
+ * next pause/exit check — and blocking until it completes, before calling [GLSurfaceView.onPause].
+ * [flushSessionPause] must call through to `ArSessionOrchestrator.tick()` directly rather than the
+ * renderer's normal (rate-limited) per-frame path — see `ArSessionManager.flushPendingPause`.
  */
 @Composable
 private fun ArCameraPreview(
     renderer: GLSurfaceView.Renderer,
     onScreenResumed: () -> Unit,
     onScreenPaused: () -> Unit,
+    flushSessionPause: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (LocalInspectionMode.current) {
@@ -318,10 +325,11 @@ private fun ArCameraPreview(
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentOnScreenResumed = rememberUpdatedState(onScreenResumed)
     val currentOnScreenPaused = rememberUpdatedState(onScreenPaused)
+    val currentFlushSessionPause = rememberUpdatedState(flushSessionPause)
     DisposableEffect(lifecycleOwner, glSurfaceView) {
         fun pause() {
             currentOnScreenPaused.value()
-            flushPauseThroughGlThread(glSurfaceView, renderer)
+            flushPauseThroughGlThread(glSurfaceView, currentFlushSessionPause.value)
             glSurfaceView.onPause()
         }
         val observer = LifecycleEventObserver { _, event ->
@@ -344,20 +352,17 @@ private fun ArCameraPreview(
 }
 
 /**
- * Blocks until [renderer]'s `onDrawFrame` has run once more on [glSurfaceView]'s GL thread, so a
+ * Blocks until [flushSessionPause] has run once more on [glSurfaceView]'s GL thread, so a
  * `resumed = false` write that happened-before this call is guaranteed to be observed by
  * `ArSessionOrchestrator.tick()` before the caller proceeds to pause or tear down the render
- * thread. `onDrawFrame`'s `GL10` parameter is unused by [ArCameraRepository][com.volta.app.data.ar.ArCameraRepository]
- * (all GL calls go through the current context via the static `GLES20`/`GLES11Ext` APIs), so
- * passing `null` here is safe.
+ * thread. The blocking wait (bounded at 250ms) is intentional and load-bearing — this is not
+ * fire-and-forget cleanup, it's what makes the pause deterministic instead of racing the render
+ * thread's teardown; do not remove it to "simplify" this function.
  */
-private fun flushPauseThroughGlThread(
-    glSurfaceView: GLSurfaceView,
-    renderer: GLSurfaceView.Renderer
-) {
+private fun flushPauseThroughGlThread(glSurfaceView: GLSurfaceView, flushSessionPause: () -> Unit) {
     val flushed = CountDownLatch(1)
     glSurfaceView.queueEvent {
-        renderer.onDrawFrame(null)
+        flushSessionPause()
         flushed.countDown()
     }
     // 250ms: comfortably above the sub-frame time a queued GL call should take to run, while
