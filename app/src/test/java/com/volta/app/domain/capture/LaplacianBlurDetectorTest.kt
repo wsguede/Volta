@@ -1,6 +1,7 @@
 package com.volta.app.domain.capture
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 private const val WIDTH = 5
@@ -14,7 +15,7 @@ private fun checkerboardImage(): ByteArray = ByteArray(WIDTH * HEIGHT) { i ->
     (if ((x + y) % 2 == 0) 255 else 0).toByte()
 }
 
-class BlurDetectorTest {
+class LaplacianBlurDetectorTest {
 
     private val detector = LaplacianBlurDetector()
 
@@ -47,5 +48,14 @@ class BlurDetectorTest {
 
         assertThat(sharp.isSharp(49.99f)).isFalse()
         assertThat(sharp.isSharp(0f)).isFalse()
+    }
+
+    @Test
+    fun `sharpnessScore rejects a frameData size that doesn't match width times height`() {
+        val strided = ByteArray(WIDTH * HEIGHT + 3)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            detector.sharpnessScore(strided, WIDTH, HEIGHT)
+        }
     }
 }

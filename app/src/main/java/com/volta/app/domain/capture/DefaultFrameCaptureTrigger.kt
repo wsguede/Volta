@@ -71,7 +71,11 @@ class DefaultFrameCaptureTrigger(
 
     companion object {
         const val DEFAULT_ANGULAR_THRESHOLD_DEGREES = 15f
-        const val DEFAULT_BLUR_THRESHOLD = 50f
+
+        // Single source of truth with LaplacianBlurDetector.DEFAULT_SHARPNESS_THRESHOLD — both
+        // describe the same "is this frame sharp enough" cutoff. Keeping one constant prevents
+        // silent drift once either gets tuned against real device frames (#46).
+        const val DEFAULT_BLUR_THRESHOLD = LaplacianBlurDetector.DEFAULT_SHARPNESS_THRESHOLD
         const val DEFAULT_MAX_STORED_FRAMES = 150
 
         // Tolerance for trigonometric rounding error, so an exact-threshold pose (e.g. precisely
