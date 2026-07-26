@@ -11,7 +11,12 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Frame store caps at [maxStoredFrames]: worst case ~150 x 4 MB compressed JPEGs, ~600 MB — a
- * known memory constraint, not a bug.
+ * known memory constraint, not a bug. See ADR 0015.
+ *
+ * [captureIfNeeded] runs on the AR processing thread that pumps `ArSessionManager` poses (the
+ * `GLSurfaceView` render thread per ADR 0014); [capturedFrames]/[capturedFrameCount] are read
+ * later from a different dispatcher (e.g. stitching on `Dispatchers.Default`). Methods are
+ * [Synchronized] for that cross-thread handoff, not because concurrent writers are expected.
  */
 class DefaultFrameCaptureTrigger(
     private val angularThresholdDegrees: Float = DEFAULT_ANGULAR_THRESHOLD_DEGREES,
@@ -30,7 +35,11 @@ class DefaultFrameCaptureTrigger(
         get() = synchronized(this) { frames.toList() }
 
     @Synchronized
-    override fun evaluate(pose: DevicePose, sharpnessScore: Float): CaptureEvent? {
+    override fun captureIfNeeded(
+        pose: DevicePose,
+        sharpnessScore: Float,
+        jpeg: () -> ByteArray
+    ): CaptureEvent? {
         if (sharpnessScore < blurThreshold) return null
         val last = lastCapturedPose
         if (last != null &&
@@ -38,18 +47,15 @@ class DefaultFrameCaptureTrigger(
         ) {
             return null
         }
-        return CaptureEvent(pose)
-    }
 
-    @Synchronized
-    override fun recordFrame(jpeg: ByteArray, pose: DevicePose) {
-        frames.add(CapturedFrame(jpeg, pose))
+        frames.add(CapturedFrame(jpeg(), pose))
         lastCapturedPose = pose
         if (frames.size > maxStoredFrames) {
             frames.removeAt(0)
             onFrameDropped()
         }
         _capturedFrameCount.value = frames.size
+        return CaptureEvent(pose)
     }
 
     // Great-circle angular distance treating yaw as longitude and pitch as latitude; roll is

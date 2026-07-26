@@ -26,47 +26,51 @@ class DefaultFrameCaptureTriggerTest {
     private fun poseAt(yawDegrees: Double) =
         DevicePose(yaw = yawDegrees * PI / 180.0, pitch = 0.0, roll = 0.0)
 
+    private fun jpegOf(vararg bytes: Byte) = { byteArrayOf(*bytes) }
+
     @Test
-    fun `first evaluation captures regardless of angle when sharp`() {
-        val event = trigger().evaluate(ORIGIN, SHARP)
+    fun `first capture succeeds regardless of angle when sharp`() {
+        val event = trigger().captureIfNeeded(ORIGIN, SHARP, jpegOf(1))
 
         assertThat(event).isEqualTo(CaptureEvent(ORIGIN))
     }
 
     @Test
-    fun `first evaluation does not capture when blurry`() {
-        val event = trigger().evaluate(ORIGIN, BLURRY)
+    fun `first capture is rejected when blurry`() {
+        val event = trigger().captureIfNeeded(ORIGIN, BLURRY, jpegOf(1))
 
         assertThat(event).isNull()
     }
 
     @Test
-    fun `evaluate does not mutate state, so repeated calls stay capturable`() {
-        val trigger = trigger()
+    fun `does not invoke jpeg lambda when the frame is rejected`() {
+        var jpegCalls = 0
+        val jpeg = {
+            jpegCalls++
+            byteArrayOf(1)
+        }
 
-        trigger.evaluate(ORIGIN, SHARP)
-        val secondEvent = trigger.evaluate(ORIGIN, SHARP)
+        trigger().captureIfNeeded(ORIGIN, BLURRY, jpeg)
 
-        assertThat(secondEvent).isEqualTo(CaptureEvent(ORIGIN))
-        assertThat(trigger.capturedFrameCount.value).isEqualTo(0)
+        assertThat(jpegCalls).isEqualTo(0)
     }
 
     @Test
-    fun `does not capture again within angular threshold of last recorded frame`() {
+    fun `does not capture again within angular threshold of the last captured frame`() {
         val trigger = trigger(angularThresholdDegrees = 15f)
-        trigger.recordFrame(jpeg = byteArrayOf(1), pose = poseAt(0.0))
+        trigger.captureIfNeeded(poseAt(0.0), SHARP, jpegOf(1))
 
-        val event = trigger.evaluate(poseAt(10.0), SHARP)
+        val event = trigger.captureIfNeeded(poseAt(10.0), SHARP, jpegOf(2))
 
         assertThat(event).isNull()
     }
 
     @Test
-    fun `captures again once angular threshold from last recorded frame is met`() {
+    fun `captures again once angular threshold from the last captured frame is met`() {
         val trigger = trigger(angularThresholdDegrees = 15f)
-        trigger.recordFrame(jpeg = byteArrayOf(1), pose = poseAt(0.0))
+        trigger.captureIfNeeded(poseAt(0.0), SHARP, jpegOf(1))
 
-        val event = trigger.evaluate(poseAt(15.0), SHARP)
+        val event = trigger.captureIfNeeded(poseAt(15.0), SHARP, jpegOf(2))
 
         assertThat(event).isEqualTo(CaptureEvent(poseAt(15.0)))
     }
@@ -74,18 +78,18 @@ class DefaultFrameCaptureTriggerTest {
     @Test
     fun `does not capture past angular threshold when blurry`() {
         val trigger = trigger(angularThresholdDegrees = 15f)
-        trigger.recordFrame(jpeg = byteArrayOf(1), pose = poseAt(0.0))
+        trigger.captureIfNeeded(poseAt(0.0), SHARP, jpegOf(1))
 
-        val event = trigger.evaluate(poseAt(90.0), BLURRY)
+        val event = trigger.captureIfNeeded(poseAt(90.0), BLURRY, jpegOf(2))
 
         assertThat(event).isNull()
     }
 
     @Test
-    fun `recordFrame appends to capturedFrames`() {
+    fun `a successful capture appends to capturedFrames`() {
         val trigger = trigger()
 
-        trigger.recordFrame(jpeg = byteArrayOf(1, 2, 3), pose = ORIGIN)
+        trigger.captureIfNeeded(ORIGIN, SHARP, jpegOf(1, 2, 3))
 
         assertThat(
             trigger.capturedFrames
@@ -93,22 +97,31 @@ class DefaultFrameCaptureTriggerTest {
     }
 
     @Test
-    fun `recordFrame updates capturedFrameCount`() {
+    fun `a successful capture updates capturedFrameCount`() {
         val trigger = trigger()
 
-        trigger.recordFrame(jpeg = byteArrayOf(1), pose = poseAt(0.0))
-        trigger.recordFrame(jpeg = byteArrayOf(2), pose = poseAt(20.0))
+        trigger.captureIfNeeded(poseAt(0.0), SHARP, jpegOf(1))
+        trigger.captureIfNeeded(poseAt(20.0), SHARP, jpegOf(2))
 
         assertThat(trigger.capturedFrameCount.value).isEqualTo(2)
+    }
+
+    @Test
+    fun `a rejected capture does not update capturedFrameCount`() {
+        val trigger = trigger()
+
+        trigger.captureIfNeeded(ORIGIN, BLURRY, jpegOf(1))
+
+        assertThat(trigger.capturedFrameCount.value).isEqualTo(0)
     }
 
     @Test
     fun `frame store drops oldest frame once cap is exceeded`() {
         val trigger = trigger(maxStoredFrames = 2)
 
-        trigger.recordFrame(jpeg = byteArrayOf(1), pose = poseAt(0.0))
-        trigger.recordFrame(jpeg = byteArrayOf(2), pose = poseAt(20.0))
-        trigger.recordFrame(jpeg = byteArrayOf(3), pose = poseAt(40.0))
+        trigger.captureIfNeeded(poseAt(0.0), SHARP, jpegOf(1))
+        trigger.captureIfNeeded(poseAt(20.0), SHARP, jpegOf(2))
+        trigger.captureIfNeeded(poseAt(40.0), SHARP, jpegOf(3))
 
         assertThat(trigger.capturedFrames).containsExactly(
             CapturedFrame(byteArrayOf(2), poseAt(20.0)),
@@ -122,9 +135,9 @@ class DefaultFrameCaptureTriggerTest {
         var dropCount = 0
         val trigger = trigger(maxStoredFrames = 2, onFrameDropped = { dropCount++ })
 
-        trigger.recordFrame(jpeg = byteArrayOf(1), pose = poseAt(0.0))
-        trigger.recordFrame(jpeg = byteArrayOf(2), pose = poseAt(20.0))
-        trigger.recordFrame(jpeg = byteArrayOf(3), pose = poseAt(40.0))
+        trigger.captureIfNeeded(poseAt(0.0), SHARP, jpegOf(1))
+        trigger.captureIfNeeded(poseAt(20.0), SHARP, jpegOf(2))
+        trigger.captureIfNeeded(poseAt(40.0), SHARP, jpegOf(3))
 
         assertThat(dropCount).isEqualTo(1)
     }
@@ -134,7 +147,7 @@ class DefaultFrameCaptureTriggerTest {
         var dropCount = 0
         val trigger = trigger(maxStoredFrames = 2, onFrameDropped = { dropCount++ })
 
-        trigger.recordFrame(jpeg = byteArrayOf(1), pose = poseAt(0.0))
+        trigger.captureIfNeeded(poseAt(0.0), SHARP, jpegOf(1))
 
         assertThat(dropCount).isEqualTo(0)
     }
