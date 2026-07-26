@@ -12,13 +12,15 @@ interface FrameCaptureTrigger {
      * score of the same frame across two independently-ticking flows would be awkward, so the
      * caller pushes one (pose, sharpnessScore) pair per evaluated frame instead.
      *
-     * Combines the capture decision and the store write atomically, so a caller can't record a
-     * frame this trigger never approved: [jpeg] is only invoked — and its result stored — when
-     * both the angular-spacing and sharpness thresholds are met.
+     * Returns a [CaptureApproval] only when both the angular-spacing and sharpness thresholds are
+     * met. Deliberately does not accept or return a JPEG: compressing the frame is CPU-bound work
+     * that belongs on the caller's own dispatcher (see AGENTS.md), not inside this call or [record].
      */
-    fun captureIfNeeded(
-        pose: DevicePose,
-        sharpnessScore: Float,
-        jpeg: () -> ByteArray
-    ): CaptureEvent?
+    fun evaluate(pose: DevicePose, sharpnessScore: Float): CaptureApproval?
+
+    /**
+     * Stores [jpeg] for the frame [approval] was granted for. [CaptureApproval] can only be
+     * constructed by [evaluate], so this cannot be called with a frame the trigger never approved.
+     */
+    fun record(approval: CaptureApproval, jpeg: ByteArray): CaptureEvent
 }

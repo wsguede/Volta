@@ -13,10 +13,12 @@ import kotlinx.coroutines.flow.asStateFlow
  * Frame store caps at [maxStoredFrames]: worst case ~150 x 4 MB compressed JPEGs, ~600 MB — a
  * known memory constraint, not a bug. See ADR 0015.
  *
- * [captureIfNeeded] runs on the AR processing thread that pumps `ArSessionManager` poses (the
+ * [evaluate] and [record] run on the AR processing thread that pumps `ArSessionManager` poses (the
  * `GLSurfaceView` render thread per ADR 0014); [capturedFrames]/[capturedFrameCount] are read
  * later from a different dispatcher (e.g. stitching on `Dispatchers.Default`). Methods are
  * [Synchronized] for that cross-thread handoff, not because concurrent writers are expected.
+ * JPEG compression happens in the caller, between [evaluate] and [record] — keep it there; putting
+ * it inside either method would block whichever thread drives them with CPU-bound work.
  */
 class DefaultFrameCaptureTrigger(
     private val angularThresholdDegrees: Float = DEFAULT_ANGULAR_THRESHOLD_DEGREES,
@@ -35,11 +37,7 @@ class DefaultFrameCaptureTrigger(
         get() = synchronized(this) { frames.toList() }
 
     @Synchronized
-    override fun captureIfNeeded(
-        pose: DevicePose,
-        sharpnessScore: Float,
-        jpeg: () -> ByteArray
-    ): CaptureEvent? {
+    override fun evaluate(pose: DevicePose, sharpnessScore: Float): CaptureApproval? {
         if (sharpnessScore < blurThreshold) return null
         val last = lastCapturedPose
         if (last != null &&
@@ -47,8 +45,13 @@ class DefaultFrameCaptureTrigger(
         ) {
             return null
         }
+        return CaptureApproval(pose)
+    }
 
-        frames.add(CapturedFrame(jpeg(), pose))
+    @Synchronized
+    override fun record(approval: CaptureApproval, jpeg: ByteArray): CaptureEvent {
+        val pose = approval.pose
+        frames.add(CapturedFrame(jpeg, pose))
         lastCapturedPose = pose
         if (frames.size > maxStoredFrames) {
             frames.removeAt(0)
