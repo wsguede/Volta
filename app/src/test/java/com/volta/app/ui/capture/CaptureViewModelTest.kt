@@ -1,13 +1,22 @@
 package com.volta.app.ui.capture
 
+import android.opengl.GLSurfaceView
 import com.google.common.truth.Truth.assertThat
 import com.volta.app.domain.ar.ArSessionManager
 import com.volta.app.domain.model.ArFrame
 import com.volta.app.domain.model.DevicePose
 import com.volta.app.domain.model.TrackingState
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Test
+
+private class FakeGlRenderer : GLSurfaceView.Renderer {
+    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) = Unit
+    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) = Unit
+    override fun onDrawFrame(gl: GL10?) = Unit
+}
 
 private class FakeArSessionManager : ArSessionManager {
     override val isAvailable: Flow<Boolean> = MutableStateFlow(false)
@@ -19,6 +28,8 @@ private class FakeArSessionManager : ArSessionManager {
         private set
     var pauseCalls = 0
         private set
+    var flushPendingPauseCalls = 0
+        private set
 
     override fun resume() {
         resumeCalls++
@@ -27,12 +38,26 @@ private class FakeArSessionManager : ArSessionManager {
     override fun pause() {
         pauseCalls++
     }
+
+    override fun flushPendingPause() {
+        flushPendingPauseCalls++
+    }
 }
 
 class CaptureViewModelTest {
 
-    private fun viewModel(arSessionManager: ArSessionManager = FakeArSessionManager()) =
-        CaptureViewModel(arSessionManager)
+    private fun viewModel(
+        arSessionManager: ArSessionManager = FakeArSessionManager(),
+        cameraRenderer: GLSurfaceView.Renderer = FakeGlRenderer()
+    ) = CaptureViewModel(arSessionManager, cameraRenderer)
+
+    @Test
+    fun `exposes the injected camera renderer for the capture screen to embed`() {
+        val renderer = FakeGlRenderer()
+        val viewModel = viewModel(cameraRenderer = renderer)
+
+        assertThat(viewModel.cameraRenderer).isSameInstanceAs(renderer)
+    }
 
     @Test
     fun `initial state has session inactive`() {
@@ -204,6 +229,26 @@ class CaptureViewModelTest {
         val viewModel = viewModel(arSessionManager)
 
         viewModel.onCameraPermissionResult(granted = false, isPermanentlyDenied = true)
+
+        assertThat(arSessionManager.pauseCalls).isEqualTo(1)
+    }
+
+    @Test
+    fun `flushSessionPause flushes the pending pause`() {
+        val arSessionManager = FakeArSessionManager()
+        val viewModel = viewModel(arSessionManager)
+
+        viewModel.flushSessionPause()
+
+        assertThat(arSessionManager.flushPendingPauseCalls).isEqualTo(1)
+    }
+
+    @Test
+    fun `onCleared pauses the ARCore session`() {
+        val arSessionManager = FakeArSessionManager()
+        val viewModel = viewModel(arSessionManager)
+
+        viewModel.onCleared()
 
         assertThat(arSessionManager.pauseCalls).isEqualTo(1)
     }

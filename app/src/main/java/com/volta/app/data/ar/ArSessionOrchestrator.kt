@@ -3,8 +3,9 @@ package com.volta.app.data.ar
 /**
  * Pure retry/backoff/resume-pause state machine for driving an ARCore session, decoupled from
  * the real native `Session` (generic over [S]) so it can be unit tested without one.
- * [ArCameraRepository]'s background thread drives this by calling [tick] in a loop and sleeping
- * for the returned delay before calling it again.
+ * [ArCameraRepository] drives this from `GLSurfaceView.onDrawFrame`, calling [tick] once per
+ * frame the `TickScheduler` gate allows through, rather than a sleep-controlled loop — see
+ * ADR 0014.
  */
 internal class ArSessionOrchestrator<S>(
     private val createSession: () -> S?,
@@ -12,7 +13,9 @@ internal class ArSessionOrchestrator<S>(
     private val pauseSession: (S) -> Unit,
     private val pumpSession: (S) -> PumpResult,
     private val onAvailabilityChanged: (Boolean) -> Unit,
-    private val onTrackingLost: () -> Unit
+    // Fires on any transition to "not actively pumping" — both a genuine tracking/camera loss
+    // (CAMERA_UNAVAILABLE) and an ordinary resumed-to-paused transition — not tracking loss alone.
+    private val onSessionStopped: () -> Unit
 ) {
     enum class PumpResult { PROCESSED, NO_NEW_FRAME, CAMERA_UNAVAILABLE }
 
@@ -65,7 +68,7 @@ internal class ArSessionOrchestrator<S>(
     private fun stop() {
         session?.let(pauseSession)
         isSessionResumed = false
-        onTrackingLost()
+        onSessionStopped()
     }
 
     private fun retryDelay(): Long = if (sessionCreationBackingOff) {

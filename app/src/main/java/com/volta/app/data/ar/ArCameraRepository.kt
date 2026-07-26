@@ -1,10 +1,11 @@
 package com.volta.app.data.ar
 
 import android.content.Context
-import android.opengl.EGL14
-import android.opengl.EGLConfig
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
+import android.opengl.GLSurfaceView
+import android.view.Surface
+import android.view.WindowManager
 import com.google.ar.core.Frame
 import com.google.ar.core.Session
 import com.google.ar.core.exceptions.CameraNotAvailableException
@@ -18,6 +19,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -27,21 +30,35 @@ import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 
 /**
- * Owns the ARCore [Session] end-to-end via a headless (non-rendering) update loop on a dedicated
- * background thread. Does not depend on a UI-owned GLSurfaceView — see ADR 0013 and the note on
- * issue #16 about camera-texture ownership once the on-screen renderer is built.
+ * Owns the ARCore [Session] end-to-end, driven by the GL thread that [GLSurfaceView] creates and
+ * manages for the capture screen's camera preview — see ADR 0014 for why session ownership lives
+ * on the on-screen render thread rather than a headless background thread (the earlier design).
  *
  * `@Singleton` at the class level (in addition to [com.volta.app.di.ArModule]'s `@Binds`) is
  * required: ARCore needs exclusive camera ownership (ADR 0013), so a second unscoped instance
- * would spin up a second native `Session`, EGL context, and polling thread.
+ * would spin up a second native `Session` and camera texture.
+ *
+ * `onSurfaceCreated`/`onSurfaceChanged`/`onDrawFrame`/[flushPendingPause] are all invoked on the
+ * single GL thread [GLSurfaceView] owns ([flushPendingPause] via `GLSurfaceView.queueEvent`, per
+ * its own doc), so the fields they touch need no synchronization between each other. [resume]/
+ * [pause] are the only entry points called from another thread (the ViewModel, on the main
+ * thread), hence [resumed] alone is an [AtomicBoolean].
  */
 @Singleton
 class ArCameraRepository @Inject constructor(@ApplicationContext private val context: Context) :
-    ArSessionManager {
+    ArSessionManager,
+    GLSurfaceView.Renderer {
 
     private val resumed = AtomicBoolean(false)
-    private val threadStarted = AtomicBoolean(false)
-    private val sessionThread by lazy { ArSessionThread() }
+    private val cameraQuadRenderer = CameraQuadRenderer()
+
+    private var cameraTextureId = 0
+    private var activeSession: Session? = null
+    private var hasRenderableFrame = false
+    private var displayWidth = 0
+    private var displayHeight = 0
+    private var displayRotation = Surface.ROTATION_0
+    private var displayGeometryDirty = false
 
     private val _isAvailable = MutableStateFlow(false)
 
@@ -65,15 +82,80 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
     private val _trackingState = MutableStateFlow<TrackingState>(TrackingState.NotTracking)
     override val trackingState: Flow<TrackingState> = _trackingState.asStateFlow()
 
+    private val orchestrator = ArSessionOrchestrator(
+        createSession = ::createRealSession,
+        resumeSession = ::resumeRealSession,
+        pauseSession = { it.pause() },
+        pumpSession = ::pumpRealSession,
+        onAvailabilityChanged = { available -> _isAvailable.value = available },
+        onSessionStopped = {
+            _trackingState.value = TrackingState.NotTracking
+            // Otherwise the last successfully drawn frame stays frozen on screen with no cue
+            // that the camera/tracking was actually lost.
+            hasRenderableFrame = false
+        }
+    )
+    private val ticker = GatedSessionTicker(orchestrator, TickScheduler())
+
     override fun resume() {
         resumed.set(true)
-        if (threadStarted.compareAndSet(false, true)) {
-            sessionThread.start()
-        }
     }
 
     override fun pause() {
         resumed.set(false)
+    }
+
+    /**
+     * Must be called on the GL thread (e.g. via `GLSurfaceView.queueEvent`) — uses
+     * [GatedSessionTicker.forceTick] rather than [onDrawFrame]'s normal (rate-limited)
+     * [GatedSessionTicker.tickIfScheduled] path, since this exists specifically to guarantee
+     * `Session.pause()` has actually run after [pause]: mid-backoff (a scheduled retry still
+     * pending, up to [ArSessionOrchestrator.UNAVAILABLE_RETRY_INTERVAL_MS] away), the rate-limited
+     * path would silently no-op while a caller believed the pause had landed.
+     */
+    override fun flushPendingPause() {
+        ticker.forceTick(resumed.get()) { unexpected ->
+            Timber.e(unexpected, "Unexpected error flushing a pending ARCore session pause")
+        }
+    }
+
+    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+        cameraTextureId = createExternalTexture()
+        cameraQuadRenderer.createOnGlThread()
+        hasRenderableFrame = false
+        // The Session (if one already exists from before this surface was torn down, e.g. after
+        // GLSurfaceView.onPause()/onResume()) must be rebound to the newly created texture — the
+        // old one belonged to a now-destroyed GL context.
+        activeSession?.setCameraTextureName(cameraTextureId)
+    }
+
+    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+        GLES20.glViewport(0, 0, width, height)
+        displayWidth = width
+        displayHeight = height
+        displayRotation = currentDisplayRotation()
+        displayGeometryDirty = true
+    }
+
+    override fun onDrawFrame(gl: GL10?) {
+        ticker.tickIfScheduled(resumed.get()) { unexpected ->
+            Timber.e(unexpected, "Unexpected error in the ARCore session loop")
+        }
+        if (hasRenderableFrame) {
+            cameraQuadRenderer.draw(cameraTextureId)
+        } else {
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+        }
+    }
+
+    // WindowManager.getDefaultDisplay() is deprecated in favor of a Display obtained from a
+    // UI-associated Context, which @ApplicationContext is not (Context.getDisplay() throws
+    // UnsupportedOperationException on it). The deprecated API still returns the correct rotation
+    // for Volta's single-display, single-window use case.
+    @Suppress("DEPRECATION")
+    private fun currentDisplayRotation(): Int {
+        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        return windowManager.defaultDisplay.rotation
     }
 
     private fun createExternalTexture(): Int {
@@ -83,147 +165,82 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         return textureIds[0]
     }
 
-    private fun initializeGl() {
-        val display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
-        check(display != EGL14.EGL_NO_DISPLAY) { "Unable to obtain an EGL display" }
-
-        val version = IntArray(2)
-        check(EGL14.eglInitialize(display, version, 0, version, 1)) { "Unable to initialize EGL" }
-
-        val configAttributes = intArrayOf(
-            EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
-            EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT,
-            EGL14.EGL_RED_SIZE, 8,
-            EGL14.EGL_GREEN_SIZE, 8,
-            EGL14.EGL_BLUE_SIZE, 8,
-            EGL14.EGL_ALPHA_SIZE, 8,
-            EGL14.EGL_NONE
-        )
-        val configs = arrayOfNulls<EGLConfig>(1)
-        val numConfigs = IntArray(1)
-        check(
-            EGL14.eglChooseConfig(display, configAttributes, 0, configs, 0, 1, numConfigs, 0)
-        ) { "Unable to choose an EGL config" }
-        val config = configs[0] ?: error("No matching EGL config found")
-
-        val contextAttributes = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE)
-        val eglContext =
-            EGL14.eglCreateContext(display, config, EGL14.EGL_NO_CONTEXT, contextAttributes, 0)
-        check(eglContext != EGL14.EGL_NO_CONTEXT) { "Unable to create an EGL context" }
-
-        val surfaceAttributes = intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE)
-        val surface = EGL14.eglCreatePbufferSurface(display, config, surfaceAttributes, 0)
-        check(surface != EGL14.EGL_NO_SURFACE) { "Unable to create an EGL pbuffer surface" }
-
-        check(
-            EGL14.eglMakeCurrent(display, surface, surface, eglContext)
-        ) { "Unable to make the EGL context current" }
+    private fun createRealSession(): Session? = try {
+        Session(context).also {
+            it.setCameraTextureName(cameraTextureId)
+            activeSession = it
+        }
+    } catch (unavailable: UnavailableException) {
+        Timber.e(unavailable, "ARCore session unavailable on this device")
+        null
     }
 
-    // Deliberately a non-daemon Thread with no stop path: this repository is a @Singleton that
-    // owns the ARCore session for the app's entire process lifetime, so the thread — and the GL
-    // texture/EGL surface/context it creates — are meant to live until process death. There is
-    // no teardown call site to join/interrupt/release them against.
-    private inner class ArSessionThread : Thread(THREAD_NAME) {
+    private fun resumeRealSession(session: Session): Boolean = try {
+        session.resume()
+        true
+    } catch (cameraUnavailable: CameraNotAvailableException) {
+        Timber.w(cameraUnavailable, "Camera unavailable while resuming ARCore session")
+        false
+    }
 
-        private val orchestrator = ArSessionOrchestrator(
-            createSession = ::createRealSession,
-            resumeSession = ::resumeRealSession,
-            pauseSession = { it.pause() },
-            pumpSession = ::pumpRealSession,
-            onAvailabilityChanged = { available -> _isAvailable.value = available },
-            onTrackingLost = { _trackingState.value = TrackingState.NotTracking }
-        )
-
-        @Suppress("TooGenericExceptionCaught")
-        override fun run() {
-            try {
-                initializeGl()
-            } catch (unexpected: Exception) {
-                Timber.e(unexpected, "Failed to initialize the headless EGL context for ARCore")
-                return
-            }
-            while (true) {
-                val delayMs = runCatching { orchestrator.tick(resumed.get()) }
-                    .onFailure { unexpected ->
-                        Timber.e(unexpected, "Unexpected error in the ARCore session loop")
-                    }
-                    .getOrDefault(ArSessionOrchestrator.PAUSED_POLL_INTERVAL_MS)
-                Thread.sleep(delayMs)
-            }
+    private fun pumpRealSession(session: Session): ArSessionOrchestrator.PumpResult = try {
+        if (displayGeometryDirty && displayWidth > 0 && displayHeight > 0) {
+            session.setDisplayGeometry(displayRotation, displayWidth, displayHeight)
+            displayGeometryDirty = false
         }
+        processFrame(session.update())
+        ArSessionOrchestrator.PumpResult.PROCESSED
+    } catch (expected: NotYetAvailableException) {
+        // No new frame since the last update() call — expected; ARCore paces this
+        // internally to the camera's actual frame rate.
+        ArSessionOrchestrator.PumpResult.NO_NEW_FRAME
+    } catch (cameraUnavailable: CameraNotAvailableException) {
+        Timber.w(cameraUnavailable, "Camera unavailable during ARCore session update")
+        ArSessionOrchestrator.PumpResult.CAMERA_UNAVAILABLE
+    }
 
-        private fun createRealSession(): Session? = try {
-            Session(context).also { it.setCameraTextureName(createExternalTexture()) }
-        } catch (unavailable: UnavailableException) {
-            Timber.e(unavailable, "ARCore session unavailable on this device")
-            null
-        }
+    private fun processFrame(frame: Frame) {
+        val camera = frame.camera
+        _trackingState.value = camera.trackingState.toDomain()
 
-        private fun resumeRealSession(activeSession: Session): Boolean = try {
-            activeSession.resume()
-            true
-        } catch (cameraUnavailable: CameraNotAvailableException) {
-            Timber.w(cameraUnavailable, "Camera unavailable while resuming ARCore session")
-            false
-        }
-
-        private fun pumpRealSession(activeSession: Session): ArSessionOrchestrator.PumpResult =
-            try {
-                processFrame(activeSession.update())
-                ArSessionOrchestrator.PumpResult.PROCESSED
-            } catch (expected: NotYetAvailableException) {
-                // No new frame since the last update() call — expected; ARCore paces this
-                // internally to the camera's actual frame rate.
-                ArSessionOrchestrator.PumpResult.NO_NEW_FRAME
-            } catch (cameraUnavailable: CameraNotAvailableException) {
-                Timber.w(cameraUnavailable, "Camera unavailable during ARCore session update")
-                ArSessionOrchestrator.PumpResult.CAMERA_UNAVAILABLE
-            }
-
-        private fun processFrame(frame: Frame) {
-            val camera = frame.camera
-            _trackingState.value = camera.trackingState.toDomain()
-
-            val quaternion = camera.pose.rotationQuaternion
-            _currentPose.tryEmit(
-                DevicePose.fromQuaternion(
-                    x = quaternion[0].toDouble(),
-                    y = quaternion[1].toDouble(),
-                    z = quaternion[2].toDouble(),
-                    w = quaternion[3].toDouble()
-                )
+        val quaternion = camera.pose.rotationQuaternion
+        _currentPose.tryEmit(
+            DevicePose.fromQuaternion(
+                x = quaternion[0].toDouble(),
+                y = quaternion[1].toDouble(),
+                z = quaternion[2].toDouble(),
+                w = quaternion[3].toDouble()
             )
-            emitCameraFrame(frame)
+        )
+        if (frame.hasDisplayGeometryChanged()) {
+            cameraQuadRenderer.updateTransform(frame)
         }
+        hasRenderableFrame = true
+        emitCameraFrame(frame)
+    }
 
-        private fun emitCameraFrame(frame: Frame) {
-            val image = try {
-                frame.acquireCameraImage()
-            } catch (expected: NotYetAvailableException) {
-                return
-            }
-            try {
-                val yPlane = image.planes[0]
-                _cameraFrames.tryEmit(
-                    ArFrame(
-                        luma = extractLuma(
-                            buffer = yPlane.buffer,
-                            rowStride = yPlane.rowStride,
-                            width = image.width,
-                            height = image.height
-                        ),
+    private fun emitCameraFrame(frame: Frame) {
+        val image = try {
+            frame.acquireCameraImage()
+        } catch (expected: NotYetAvailableException) {
+            return
+        }
+        try {
+            val yPlane = image.planes[0]
+            _cameraFrames.tryEmit(
+                ArFrame(
+                    luma = extractLuma(
+                        buffer = yPlane.buffer,
+                        rowStride = yPlane.rowStride,
                         width = image.width,
                         height = image.height
-                    )
+                    ),
+                    width = image.width,
+                    height = image.height
                 )
-            } finally {
-                image.close()
-            }
+            )
+        } finally {
+            image.close()
         }
-    }
-
-    companion object {
-        private const val THREAD_NAME = "ArCameraRepository-GLThread"
     }
 }
