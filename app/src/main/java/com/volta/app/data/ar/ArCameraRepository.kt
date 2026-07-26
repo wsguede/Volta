@@ -88,7 +88,7 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         pauseSession = { it.pause() },
         pumpSession = ::pumpRealSession,
         onAvailabilityChanged = { available -> _isAvailable.value = available },
-        onTrackingLost = {
+        onSessionStopped = {
             _trackingState.value = TrackingState.NotTracking
             // Otherwise the last successfully drawn frame stays frozen on screen with no cue
             // that the camera/tracking was actually lost.

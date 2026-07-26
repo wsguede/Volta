@@ -67,7 +67,7 @@ class CaptureViewModel @Inject constructor(
      * must be paused explicitly when this screen's ViewModel goes away — otherwise navigating to
      * another screen within the app (which never fires Activity `ON_PAUSE`) would leave the
      * camera reserved indefinitely. */
-    override fun onCleared() {
+    public override fun onCleared() {
         arSessionManager.pause()
     }
 }

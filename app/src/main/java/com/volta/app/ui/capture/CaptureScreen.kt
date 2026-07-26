@@ -100,6 +100,8 @@ fun CaptureScreen(
     CaptureContent(
         uiState = uiState,
         cameraRenderer = viewModel.cameraRenderer,
+        onScreenResumed = viewModel::onScreenResumed,
+        onScreenPaused = viewModel::onScreenPaused,
         onExport = onExport,
         onSettings = onSettings,
         onRequestCameraPermission = {
@@ -209,6 +211,8 @@ internal fun CaptureContent(
     onExport: () -> Unit,
     onSettings: () -> Unit,
     cameraRenderer: GLSurfaceView.Renderer = NoOpGlRenderer,
+    onScreenResumed: () -> Unit = {},
+    onScreenPaused: () -> Unit = {},
     onRequestCameraPermission: () -> Unit = {},
     onOpenAppSettings: () -> Unit = {}
 ) {
@@ -234,6 +238,8 @@ internal fun CaptureContent(
                 CapturePermissionState.Granted -> CaptureActiveContent(
                     uiState = uiState,
                     cameraRenderer = cameraRenderer,
+                    onScreenResumed = onScreenResumed,
+                    onScreenPaused = onScreenPaused,
                     onExport = onExport
                 )
                 CapturePermissionState.Denied -> CameraPermissionDeniedCard(
@@ -267,10 +273,17 @@ private fun CameraStartingPlaceholder() {
 private fun CaptureActiveContent(
     uiState: CaptureUiState,
     cameraRenderer: GLSurfaceView.Renderer,
+    onScreenResumed: () -> Unit,
+    onScreenPaused: () -> Unit,
     onExport: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
-        ArCameraPreview(renderer = cameraRenderer, modifier = Modifier.fillMaxSize())
+        ArCameraPreview(
+            renderer = cameraRenderer,
+            onScreenResumed = onScreenResumed,
+            onScreenPaused = onScreenPaused,
+            modifier = Modifier.fillMaxSize()
+        )
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -301,9 +314,24 @@ private fun CaptureActiveContent(
  * Embeds ARCore's camera passthrough feed. The [GLSurfaceView] is created once and paired with
  * the composable's lifecycle: [GLSurfaceView.onPause]/[GLSurfaceView.onResume] stop and restart
  * its GL thread so the camera isn't rendered (or ARCore's session pumped) while backgrounded.
+ *
+ * [onScreenResumed]/[onScreenPaused] (the domain-level ARCore session pause/resume, gated on
+ * [GLSurfaceView.onResume]/[GLSurfaceView.onPause] here rather than left to the separate
+ * Activity-lifecycle observer in [CaptureScreen]: that observer's `ON_PAUSE` never fires when
+ * navigating to another screen *within* the app, and racing this composable's own teardown
+ * against a separate composable's `onDispose` isn't a reliable way to guarantee the session is
+ * actually paused before the `GLSurfaceView`'s render thread is torn down. Calling both here, in
+ * this order, in this composable's own `onDispose`, removes that race: [onScreenPaused] flips the
+ * domain `resumed` flag before the blocking [GLSurfaceView.onPause] call gives the render thread
+ * one more `onDrawFrame` tick to observe it and actually call `Session.pause()`.
  */
 @Composable
-private fun ArCameraPreview(renderer: GLSurfaceView.Renderer, modifier: Modifier = Modifier) {
+private fun ArCameraPreview(
+    renderer: GLSurfaceView.Renderer,
+    onScreenResumed: () -> Unit,
+    onScreenPaused: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     if (LocalInspectionMode.current) {
         // GLSurfaceView doesn't run in layoutlib's static preview renderer.
         Box(modifier = modifier)
@@ -318,16 +346,28 @@ private fun ArCameraPreview(renderer: GLSurfaceView.Renderer, modifier: Modifier
         }
     }
     val lifecycleOwner = LocalLifecycleOwner.current
+    val currentOnScreenResumed = rememberUpdatedState(onScreenResumed)
+    val currentOnScreenPaused = rememberUpdatedState(onScreenPaused)
     DisposableEffect(lifecycleOwner, glSurfaceView) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> glSurfaceView.onResume()
-                Lifecycle.Event.ON_PAUSE -> glSurfaceView.onPause()
+                Lifecycle.Event.ON_RESUME -> {
+                    currentOnScreenResumed.value()
+                    glSurfaceView.onResume()
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    currentOnScreenPaused.value()
+                    glSurfaceView.onPause()
+                }
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            currentOnScreenPaused.value()
+            glSurfaceView.onPause()
+        }
     }
     AndroidView(factory = { glSurfaceView }, modifier = modifier)
 }

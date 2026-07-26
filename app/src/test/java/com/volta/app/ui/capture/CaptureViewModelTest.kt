@@ -226,4 +226,14 @@ class CaptureViewModelTest {
 
         assertThat(arSessionManager.pauseCalls).isEqualTo(1)
     }
+
+    @Test
+    fun `onCleared pauses the ARCore session`() {
+        val arSessionManager = FakeArSessionManager()
+        val viewModel = viewModel(arSessionManager)
+
+        viewModel.onCleared()
+
+        assertThat(arSessionManager.pauseCalls).isEqualTo(1)
+    }
 }

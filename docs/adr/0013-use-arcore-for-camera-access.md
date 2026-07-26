@@ -1,7 +1,7 @@
 # 0013 — Use ARCore for Camera Access, Superseding CameraX
 
 **Date:** 2026-07-22
-**Status:** Accepted (supersedes ADR 0003)
+**Status:** Accepted (supersedes ADR 0003; threading/EGL-ownership detail superseded by ADR 0014)
 
 ## Context
 

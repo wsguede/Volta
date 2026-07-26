@@ -15,7 +15,7 @@ class ArSessionOrchestratorTest {
     private var pausedSession: String? = null
     private var pumpSessionResult = ArSessionOrchestrator.PumpResult.PROCESSED
     private val availabilityEvents = mutableListOf<Boolean>()
-    private var trackingLostCalls = 0
+    private var sessionStoppedCalls = 0
 
     private fun orchestrator() = ArSessionOrchestrator(
         createSession = {
@@ -32,7 +32,7 @@ class ArSessionOrchestratorTest {
         },
         pumpSession = { pumpSessionResult },
         onAvailabilityChanged = { availabilityEvents.add(it) },
-        onTrackingLost = { trackingLostCalls++ }
+        onSessionStopped = { sessionStoppedCalls++ }
     )
 
     @Test
@@ -89,7 +89,7 @@ class ArSessionOrchestratorTest {
         val delay = orchestrator().tick(isResumed = true)
 
         assertThat(delay).isEqualTo(ArSessionOrchestrator.PAUSED_POLL_INTERVAL_MS)
-        assertThat(trackingLostCalls).isEqualTo(1)
+        assertThat(sessionStoppedCalls).isEqualTo(1)
         assertThat(pauseSessionCalls).isEqualTo(1)
     }
 
@@ -111,7 +111,7 @@ class ArSessionOrchestratorTest {
     }
 
     @Test
-    fun `pauses the session and reports tracking lost when transitioning to not resumed`() {
+    fun `pauses the session and reports session stopped when transitioning to not resumed`() {
         val loop = orchestrator()
         loop.tick(isResumed = true)
 
@@ -119,7 +119,7 @@ class ArSessionOrchestratorTest {
 
         assertThat(pauseSessionCalls).isEqualTo(1)
         assertThat(pausedSession).isEqualTo(SESSION)
-        assertThat(trackingLostCalls).isEqualTo(1)
+        assertThat(sessionStoppedCalls).isEqualTo(1)
     }
 
     @Test
