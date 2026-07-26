@@ -38,10 +38,11 @@ import timber.log.Timber
  * required: ARCore needs exclusive camera ownership (ADR 0013), so a second unscoped instance
  * would spin up a second native `Session` and camera texture.
  *
- * `onSurfaceCreated`/`onSurfaceChanged`/`onDrawFrame` are all invoked on the single GL thread
- * [GLSurfaceView] owns, so the fields they touch need no synchronization between each other.
- * [resume]/[pause] are the only entry points called from another thread (the ViewModel, on the
- * main thread), hence [resumed] alone is an [AtomicBoolean].
+ * `onSurfaceCreated`/`onSurfaceChanged`/`onDrawFrame`/[flushPendingPause] are all invoked on the
+ * single GL thread [GLSurfaceView] owns ([flushPendingPause] via `GLSurfaceView.queueEvent`, per
+ * its own doc), so the fields they touch need no synchronization between each other. [resume]/
+ * [pause] are the only entry points called from another thread (the ViewModel, on the main
+ * thread), hence [resumed] alone is an [AtomicBoolean].
  */
 @Singleton
 class ArCameraRepository @Inject constructor(@ApplicationContext private val context: Context) :
@@ -49,7 +50,6 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
     GLSurfaceView.Renderer {
 
     private val resumed = AtomicBoolean(false)
-    private val tickScheduler = TickScheduler()
     private val cameraQuadRenderer = CameraQuadRenderer()
 
     private var cameraTextureId = 0
@@ -95,6 +95,7 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
             hasRenderableFrame = false
         }
     )
+    private val ticker = GatedSessionTicker(orchestrator, TickScheduler())
 
     override fun resume() {
         resumed.set(true)
@@ -105,21 +106,17 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
     }
 
     /**
-     * Must be called on the GL thread (e.g. via `GLSurfaceView.queueEvent`) — calls
-     * [ArSessionOrchestrator.tick] directly, deliberately bypassing [tickScheduler]. Unlike
-     * [onDrawFrame]'s normal per-frame ticking, this exists specifically to guarantee
-     * `Session.pause()` has actually run after [pause], and [tickScheduler] gating it would
-     * defeat that: mid-backoff (a scheduled retry still pending, up to
-     * [ArSessionOrchestrator.UNAVAILABLE_RETRY_INTERVAL_MS] away), [TickScheduler.shouldTick]
-     * would return `false` and a caller invoking this via [onDrawFrame] instead would silently
-     * no-op while believing the pause had landed.
+     * Must be called on the GL thread (e.g. via `GLSurfaceView.queueEvent`) — uses
+     * [GatedSessionTicker.forceTick] rather than [onDrawFrame]'s normal (rate-limited)
+     * [GatedSessionTicker.tickIfScheduled] path, since this exists specifically to guarantee
+     * `Session.pause()` has actually run after [pause]: mid-backoff (a scheduled retry still
+     * pending, up to [ArSessionOrchestrator.UNAVAILABLE_RETRY_INTERVAL_MS] away), the rate-limited
+     * path would silently no-op while a caller believed the pause had landed.
      */
-    @Suppress("TooGenericExceptionCaught")
     override fun flushPendingPause() {
-        runCatching { orchestrator.tick(resumed.get()) }
-            .onFailure { unexpected ->
-                Timber.e(unexpected, "Unexpected error flushing a pending ARCore session pause")
-            }
+        ticker.forceTick(resumed.get()) { unexpected ->
+            Timber.e(unexpected, "Unexpected error flushing a pending ARCore session pause")
+        }
     }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
@@ -140,15 +137,9 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         displayGeometryDirty = true
     }
 
-    @Suppress("TooGenericExceptionCaught")
     override fun onDrawFrame(gl: GL10?) {
-        if (tickScheduler.shouldTick()) {
-            val delayMs = runCatching { orchestrator.tick(resumed.get()) }
-                .onFailure { unexpected ->
-                    Timber.e(unexpected, "Unexpected error in the ARCore session loop")
-                }
-                .getOrDefault(ArSessionOrchestrator.PAUSED_POLL_INTERVAL_MS)
-            tickScheduler.scheduleNextTick(delayMs)
+        ticker.tickIfScheduled(resumed.get()) { unexpected ->
+            Timber.e(unexpected, "Unexpected error in the ARCore session loop")
         }
         if (hasRenderableFrame) {
             cameraQuadRenderer.draw(cameraTextureId)
