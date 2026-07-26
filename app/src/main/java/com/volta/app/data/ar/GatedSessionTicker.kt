@@ -4,9 +4,10 @@ package com.volta.app.data.ar
  * Pairs an [ArSessionOrchestrator] with the [TickScheduler] gate that gives it a sane rate when
  * driven from a continuously-rendering `GLSurfaceView.onDrawFrame` (~60 Hz) — while keeping a
  * second, ungated path available for callers that must guarantee a tick actually runs right now,
- * not whenever the schedule next allows one. [ArSessionManager.flushPendingPause] is exactly such
- * a caller: flushing a pending pause through [tickIfScheduled] instead of [forceTick] would let
- * it silently no-op during a scheduled backoff, defeating the guarantee it exists to provide.
+ * not whenever the schedule next allows one.
+ * [com.volta.app.domain.ar.ArSessionManager.flushPendingPause] is exactly such a caller: flushing
+ * a pending pause through [tickIfScheduled] instead of [forceTick] would let it silently no-op
+ * during a scheduled backoff, defeating the guarantee it exists to provide.
  */
 internal class GatedSessionTicker<S>(
     private val orchestrator: ArSessionOrchestrator<S>,
