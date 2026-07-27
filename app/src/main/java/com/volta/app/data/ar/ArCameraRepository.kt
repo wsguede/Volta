@@ -30,6 +30,7 @@ import javax.microedition.khronos.opengles.GL10
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -72,11 +73,19 @@ class ArCameraRepository @Inject constructor(
 
     // Parent job for in-flight JPEG-compression coroutines only (not all of applicationScope), so
     // cancelPendingCaptures() can cancel just those without touching unrelated application-scoped
-    // work. @Volatile for visibility across the GL thread (launches) and the caller thread of
-    // cancelPendingCaptures() (the ViewModel, on the main thread) — see its own doc for why this
-    // exists. Once cancelled a Job can't be reused, so cancelPendingCaptures() replaces it.
+    // work. Must be a SupervisorJob, not a plain Job: a plain Job propagates any one child's
+    // failure (e.g. YuvImage.compressToJpeg choking on malformed image data) up to this job and
+    // back down to every sibling, cancelling all of them — and since this field is only ever
+    // replaced inside cancelPendingCaptures(), a single failed capture would permanently cancel
+    // every later capture for the rest of the session with no crash and no visible signal. A
+    // SupervisorJob isolates each child's failure instead, while still letting an explicit
+    // captureJobs.cancel() cancel every current child (cancellation, unlike failure, always
+    // propagates downward regardless of supervision). @Volatile for visibility across the GL
+    // thread (launches) and the caller thread of cancelPendingCaptures() (the ViewModel, on the
+    // main thread) — see its own doc for why this exists. Once cancelled a Job can't be reused, so
+    // cancelPendingCaptures() replaces it.
     @Volatile
-    private var captureJobs: Job = Job()
+    private var captureJobs: Job = SupervisorJob()
 
     private var cameraTextureId = 0
     private var activeSession: Session? = null
@@ -151,7 +160,7 @@ class ArCameraRepository @Inject constructor(
 
     override fun cancelPendingCaptures() {
         captureJobs.cancel()
-        captureJobs = Job()
+        captureJobs = SupervisorJob()
     }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {

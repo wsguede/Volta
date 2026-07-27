@@ -74,3 +74,29 @@ Alternatives considered:
 - `LaplacianBlurDetector.DEFAULT_SHARPNESS_THRESHOLD` remains a provisional, untuned value (#46);
   this wiring makes it live in the real capture path for the first time; #46 tracks tuning it
   against real device data.
+
+### Known limitation: residual session-boundary TOCTOU race
+
+`ArSessionManager.cancelPendingCaptures()` (called from `CaptureViewModel.startSession()`, before
+`FrameCaptureTrigger.reset()`/`CoverageTracker.reset()`) closes the practical version of the race
+where a frame approved right at a session boundary could compress after the *next* session's reset
+already ran: `ArCameraRepository` scopes each compression coroutine under a `SupervisorJob`
+(`captureJobs`) that `cancelPendingCaptures()` cancels-and-replaces, and each coroutine calls
+`ensureActive()` immediately before `record()`/`markCovered()`.
+
+This is not, however, a fully airtight barrier. `Job.cancel()` is fire-and-forget rather than
+`cancelAndJoin()`, and `ensureActive()` is a check-then-act call, not an atomic one: if a
+compression coroutine's `ensureActive()` happens to observe "not yet cancelled" immediately before
+`cancelPendingCaptures()` runs, nothing prevents it from calling `record()`/`markCovered()` right
+after — there is no synchronization tying "the next session's reset has fully applied" to "every
+in-flight job from the previous session has observed cancellation." The window shrank from an
+entire JPEG-compression duration (milliseconds) to the gap between two adjacent non-suspending
+statements (a handful of CPU instructions) — vanishingly unlikely in practice, but not structurally
+impossible.
+
+Closing it fully would mean either making `cancelPendingCaptures()` suspend and `cancelAndJoin()`
+before `startSession()` proceeds to `reset()`, or tagging each capture with a session/epoch id that
+`record()`/`markCovered()` check before writing. Neither is implemented — the residual risk is
+judged negligible enough not to justify making `startSession()` asynchronous (a `LaunchedEffect`
+already tolerates a `suspend` call, so this is possible later without a `ui/` layer-boundary
+problem, if the risk ever needs to be closed for real).
