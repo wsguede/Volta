@@ -3,22 +3,48 @@ package com.volta.app.ui.capture
 import android.opengl.GLSurfaceView
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.volta.app.domain.ar.ArSessionManager
+import com.volta.app.domain.capture.FrameCaptureTrigger
+import com.volta.app.domain.coverage.CoverageTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 @HiltViewModel
 class CaptureViewModel @Inject constructor(
     private val arSessionManager: ArSessionManager,
+    private val frameCaptureTrigger: FrameCaptureTrigger,
+    private val coverageTracker: CoverageTracker,
     val cameraRenderer: GLSurfaceView.Renderer
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CaptureUiState())
     val uiState: StateFlow<CaptureUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            combine(
+                frameCaptureTrigger.capturedFrameCount,
+                coverageTracker.coveragePercent
+            ) { frameCount, coverageFraction -> frameCount to coverageFraction }
+                .collect { (frameCount, coverageFraction) ->
+                    _uiState.update {
+                        it.copy(
+                            framesCaptured = frameCount,
+                            coveragePercent = coverageFraction * PERCENT_SCALE,
+                            isCoverageBelowWarningThreshold =
+                            coverageTracker.isBelowWarningThreshold()
+                        )
+                    }
+                }
+        }
+    }
 
     fun startSession() {
         _uiState.update { it.copy(isSessionActive = true) }
@@ -83,5 +109,11 @@ class CaptureViewModel @Inject constructor(
     @VisibleForTesting(otherwise = VisibleForTesting.PROTECTED)
     public override fun onCleared() {
         arSessionManager.pause()
+    }
+
+    private companion object {
+        // CoverageTracker.coveragePercent is a 0..1 fraction; CaptureUiState.coveragePercent is
+        // displayed as a whole percentage (e.g. "73%").
+        const val PERCENT_SCALE = 100f
     }
 }
