@@ -18,7 +18,7 @@ class DefaultFrameCaptureTriggerTest {
         onFrameDropped: () -> Unit = {}
     ) = DefaultFrameCaptureTrigger(
         angularThresholdDegrees = angularThresholdDegrees,
-        blurThreshold = blurThreshold,
+        blurDetector = LaplacianBlurDetector(threshold = blurThreshold),
         maxStoredFrames = maxStoredFrames,
         onFrameDropped = onFrameDropped
     )
@@ -42,6 +42,20 @@ class DefaultFrameCaptureTriggerTest {
     @Test
     fun `first evaluation is rejected when blurry`() {
         val approval = trigger().evaluate(ORIGIN, BLURRY)
+
+        assertThat(approval).isNull()
+    }
+
+    @Test
+    fun `evaluate delegates sharpness gating to the injected BlurDetector`() {
+        val alwaysBlurry = object : BlurDetector {
+            override fun sharpnessScore(frameData: ByteArray, width: Int, height: Int) = 0f
+
+            override fun isSharp(score: Float) = false
+        }
+        val trigger = DefaultFrameCaptureTrigger(blurDetector = alwaysBlurry)
+
+        val approval = trigger.evaluate(ORIGIN, SHARP)
 
         assertThat(approval).isNull()
     }
