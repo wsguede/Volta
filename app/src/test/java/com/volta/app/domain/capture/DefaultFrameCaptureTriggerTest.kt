@@ -180,6 +180,64 @@ class DefaultFrameCaptureTriggerTest {
         assertThat(DefaultFrameCaptureTrigger.DEFAULT_MAX_STORED_FRAMES).isEqualTo(150)
     }
 
+    // isFarEnoughToCapture (cheap pre-check)
+
+    @Test
+    fun `isFarEnoughToCapture is true before anything has been recorded`() {
+        val trigger = trigger()
+
+        assertThat(trigger.isFarEnoughToCapture(ORIGIN)).isTrue()
+    }
+
+    @Test
+    fun `isFarEnoughToCapture is false within the angular threshold of the last recorded frame`() {
+        val trigger = trigger(angularThresholdDegrees = 15f)
+        trigger.captureAt(0.0, byteArrayOf(1))
+
+        assertThat(trigger.isFarEnoughToCapture(poseAt(10.0))).isFalse()
+    }
+
+    @Test
+    fun `isFarEnoughToCapture is true once past the last recorded frame's angular threshold`() {
+        val trigger = trigger(angularThresholdDegrees = 15f)
+        trigger.captureAt(0.0, byteArrayOf(1))
+
+        assertThat(trigger.isFarEnoughToCapture(poseAt(15.0))).isTrue()
+    }
+
+    @Test
+    fun `isFarEnoughToCapture does not itself require sharpness`() {
+        val trigger = trigger(angularThresholdDegrees = 15f)
+        trigger.captureAt(0.0, byteArrayOf(1))
+
+        // Far enough in angle, even though nothing here has assessed blur at all.
+        assertThat(trigger.isFarEnoughToCapture(poseAt(90.0))).isTrue()
+    }
+
+    // reset
+
+    @Test
+    fun `reset clears captured frames and the frame count`() {
+        val trigger = trigger()
+        trigger.captureAt(0.0, byteArrayOf(1))
+        trigger.captureAt(20.0, byteArrayOf(2))
+
+        trigger.reset()
+
+        assertThat(trigger.capturedFrames).isEmpty()
+        assertThat(trigger.capturedFrameCount.value).isEqualTo(0)
+    }
+
+    @Test
+    fun `reset forgets the last recorded pose, so a nearby pose is approvable again`() {
+        val trigger = trigger(angularThresholdDegrees = 15f)
+        trigger.captureAt(0.0, byteArrayOf(1))
+
+        trigger.reset()
+
+        assertThat(trigger.evaluate(poseAt(1.0), SHARP)).isNotNull()
+    }
+
     @Test
     fun `frames with identical content and pose are equal`() {
         val a = CapturedFrame(byteArrayOf(1, 2, 3), ORIGIN)

@@ -23,4 +23,22 @@ interface FrameCaptureTrigger {
      * constructed by [evaluate], so this cannot be called with a frame the trigger never approved.
      */
     fun record(approval: CaptureApproval, jpeg: ByteArray): CaptureEvent
+
+    /**
+     * Cheap pre-check: true if [pose] is far enough from the last recorded frame's pose to be
+     * worth scoring for sharpness at all. Lets a caller skip [BlurDetector.sharpnessScore]'s
+     * O(width×height) computation on frames [evaluate] would reject on angular-spacing grounds
+     * regardless, without duplicating that check's logic.
+     */
+    fun isFarEnoughToCapture(pose: DevicePose): Boolean
+
+    /**
+     * Clears all captured frames and forgets the last recorded pose, so the next [evaluate] call
+     * behaves as if this were a fresh session. Must be called whenever a new capture session
+     * starts (see [com.volta.app.ui.capture.CaptureViewModel.startSession]) — this is a
+     * `@Singleton`, so without an explicit reset, a second session in the same app process would
+     * start from the first session's leftover frame count, which violates the "session-focused,
+     * retains nothing" constraint in AGENTS.md.
+     */
+    fun reset()
 }

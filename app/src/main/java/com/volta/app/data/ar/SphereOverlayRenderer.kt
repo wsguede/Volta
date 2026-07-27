@@ -2,6 +2,7 @@ package com.volta.app.data.ar
 
 import android.opengl.GLES20
 import com.volta.app.domain.coverage.CoverageGrid
+import com.volta.app.domain.coverage.buildUncoveredCellVertices
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -16,7 +17,7 @@ import java.nio.FloatBuffer
  *
  * A custom GLES20 renderer (rather than a scene-graph library like SceneView) was chosen to stay
  * consistent with [CameraQuadRenderer]'s existing pipeline and avoid a new dependency — see
- * ADR 0016.
+ * ADR 0017.
  */
 internal class SphereOverlayRenderer {
 

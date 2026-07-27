@@ -36,6 +36,10 @@ internal fun extractNv21(
     width: Int,
     height: Int
 ): ByteArray {
+    require(width % 2 == 0 && height % 2 == 0) {
+        "width ($width) and height ($height) must both be even; YUV_420_888 chroma planes are " +
+            "subsampled 2x2 and a non-even dimension would silently truncate the last row/column"
+    }
     val chromaWidth = width / 2
     val chromaHeight = height / 2
     val nv21 = ByteArray(luma.size + 2 * chromaWidth * chromaHeight)

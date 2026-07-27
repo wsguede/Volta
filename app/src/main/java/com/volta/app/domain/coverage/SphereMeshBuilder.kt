@@ -1,6 +1,5 @@
-package com.volta.app.data.ar
+package com.volta.app.domain.coverage
 
-import com.volta.app.domain.coverage.CoverageGrid
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -8,12 +7,15 @@ import kotlin.math.sin
  * Builds a flat (x, y, z, x, y, z, ...) triangle-list vertex array — two triangles per cell quad
  * — for [grid]'s *uncovered* cells only. Captured cells contribute no vertices at all, matching
  * issue #16's acceptance criteria that captured cells render "clear (no fill or bright outline)".
+ * Pure Kotlin geometry with no GLES/Android dependency — see ADR 0017 — so it lives alongside
+ * [SphereCoverageTracker] rather than the GLES-specific renderer that consumes it
+ * (`com.volta.app.data.ar.SphereOverlayRenderer`).
  *
- * Cell boundaries follow [com.volta.app.domain.coverage.SphereCoverageTracker.poseToCell]'s
- * convention exactly (column 0..columns spans yaw 0..360°, row 0..rows spans pitch -90..+90°), and
- * the spherical-to-Cartesian mapping matches [com.volta.app.domain.model.DevicePose]'s convention
- * (right-handed, Y-up, yaw=pitch=0 facing -Z) so the overlay lines up with ARCore's own camera
- * pose when both are transformed by the same view/projection matrices.
+ * Cell boundaries follow [SphereCoverageTracker.poseToCell]'s convention exactly (column
+ * 0..columns spans yaw 0..360°, row 0..rows spans pitch -90..+90°), and the spherical-to-Cartesian
+ * mapping matches [com.volta.app.domain.model.DevicePose]'s convention (right-handed, Y-up,
+ * yaw=pitch=0 facing -Z) so the overlay lines up with ARCore's own camera pose when both are
+ * transformed by the same view/projection matrices.
  */
 internal fun buildUncoveredCellVertices(
     grid: CoverageGrid,

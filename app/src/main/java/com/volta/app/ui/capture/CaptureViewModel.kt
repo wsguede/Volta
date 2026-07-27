@@ -46,12 +46,42 @@ class CaptureViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Called once per capture session start (see [com.volta.app.ui.capture.CaptureScreen]'s
+     * `LaunchedEffect`, which fires both on first launch and whenever the screen re-enters
+     * composition after returning from export — [arSessionManager], [frameCaptureTrigger], and
+     * [coverageTracker] are all process-lifetime `@Singleton`s with no session lifecycle of their
+     * own). Resetting the trigger and tracker here is required, not optional: without it, a second
+     * session in the same app process would start already holding the first session's frame count
+     * and covered cells, silently violating AGENTS.md's "session-focused, retains nothing"
+     * constraint and letting stale coverage bypass the export-confirmation threshold.
+     */
     fun startSession() {
+        frameCaptureTrigger.reset()
+        coverageTracker.reset()
         _uiState.update { it.copy(isSessionActive = true) }
     }
 
     fun stopSession() {
         _uiState.update { it.copy(isSessionActive = false) }
+    }
+
+    /**
+     * Called when the export button is tapped. Below the coverage warning threshold, shows the
+     * confirmation dialog instead of exporting immediately; [onExport] is a navigation lambda the
+     * Composable owns (this ViewModel does not perform navigation itself), so it is only invoked
+     * directly when no confirmation is needed.
+     */
+    fun onExportClicked(onExport: () -> Unit) {
+        if (_uiState.value.isCoverageBelowWarningThreshold) {
+            _uiState.update { it.copy(showExportConfirmationDialog = true) }
+        } else {
+            onExport()
+        }
+    }
+
+    fun onDismissExportConfirmation() {
+        _uiState.update { it.copy(showExportConfirmationDialog = false) }
     }
 
     /** Called from [com.volta.app.ui.capture.CaptureScreen] on `ON_RESUME`. Only resumes the

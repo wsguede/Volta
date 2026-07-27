@@ -1,7 +1,6 @@
-package com.volta.app.data.ar
+package com.volta.app.domain.coverage
 
 import com.google.common.truth.Truth.assertThat
-import com.volta.app.domain.coverage.CoverageGrid
 import kotlin.math.sqrt
 import org.junit.Test
 

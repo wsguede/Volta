@@ -251,6 +251,11 @@ class ArCameraRepository @Inject constructor(
      * (GL) thread — the NV21 bytes are copied out synchronously here, while the image is still
      * open, then handed to a [defaultDispatcher] coroutine that compresses and calls
      * [FrameCaptureTrigger.record] and [CoverageTracker.markCovered].
+     *
+     * [BlurDetector.sharpnessScore] is itself a non-trivial O(width×height) pass, run once per
+     * frame at up to the display's refresh rate — [FrameCaptureTrigger.isFarEnoughToCapture] is
+     * checked first so it's skipped entirely on frames [FrameCaptureTrigger.evaluate] would reject
+     * on angular-spacing grounds regardless (the common case between two capture points).
      */
     private fun emitCameraFrame(frame: Frame, pose: DevicePose) {
         val image = try {
@@ -268,6 +273,7 @@ class ArCameraRepository @Inject constructor(
             )
             _cameraFrames.tryEmit(ArFrame(luma = luma, width = image.width, height = image.height))
 
+            if (!frameCaptureTrigger.isFarEnoughToCapture(pose)) return
             val sharpness = blurDetector.sharpnessScore(luma, image.width, image.height)
             val approval = frameCaptureTrigger.evaluate(pose, sharpness) ?: return
             val uPlane = image.planes[1]
@@ -283,6 +289,10 @@ class ArCameraRepository @Inject constructor(
                 width = image.width,
                 height = image.height
             )
+            // Each approved frame gets its own launch with no coalescing/backpressure. Not a
+            // problem today: the angular-spacing threshold this same call was just approved
+            // against keeps approvals naturally spaced out. Revisit if that threshold is ever
+            // tuned loose enough for approvals to cluster faster than compression drains them.
             applicationScope.launch(defaultDispatcher) {
                 val jpeg = encodeNv21ToJpeg(nv21, image.width, image.height, JPEG_QUALITY)
                 frameCaptureTrigger.record(approval, jpeg)

@@ -61,10 +61,20 @@ private class FakeFrameCaptureTrigger : FrameCaptureTrigger {
     override val capturedFrameCount: MutableStateFlow<Int> = _capturedFrameCount
     override val capturedFrames: List<CapturedFrame> = emptyList()
 
+    var resetCalls = 0
+        private set
+
     override fun evaluate(pose: DevicePose, sharpnessScore: Float): CaptureApproval? = null
 
     override fun record(approval: CaptureApproval, jpeg: ByteArray): CaptureEvent {
         error("not used by CaptureViewModelTest")
+    }
+
+    override fun isFarEnoughToCapture(pose: DevicePose): Boolean = true
+
+    override fun reset() {
+        resetCalls++
+        _capturedFrameCount.value = 0
     }
 }
 
@@ -75,12 +85,17 @@ private class FakeCoverageTracker : CoverageTracker {
         MutableStateFlow(CoverageGrid(columns = 1, rows = 1, cells = listOf(listOf(false))))
 
     var belowThreshold = true
+    var resetCalls = 0
+        private set
 
     override fun markCovered(pose: DevicePose) = Unit
 
     override fun isBelowWarningThreshold(threshold: Float): Boolean = belowThreshold
 
-    override fun reset() = Unit
+    override fun reset() {
+        resetCalls++
+        _coveragePercent.value = 0f
+    }
 }
 
 class CaptureViewModelTest {
@@ -341,5 +356,64 @@ class CaptureViewModelTest {
         coverageTracker.coveragePercent.value = 0.9f
 
         assertThat(viewModel.uiState.value.isCoverageBelowWarningThreshold).isFalse()
+    }
+
+    // Session start resets per-session singletons
+
+    @Test
+    fun `startSession resets the frame capture trigger`() {
+        val frameCaptureTrigger = FakeFrameCaptureTrigger()
+        val viewModel = viewModel(frameCaptureTrigger = frameCaptureTrigger)
+
+        viewModel.startSession()
+
+        assertThat(frameCaptureTrigger.resetCalls).isEqualTo(1)
+    }
+
+    @Test
+    fun `startSession resets the coverage tracker`() {
+        val coverageTracker = FakeCoverageTracker()
+        val viewModel = viewModel(coverageTracker = coverageTracker)
+
+        viewModel.startSession()
+
+        assertThat(coverageTracker.resetCalls).isEqualTo(1)
+    }
+
+    // Export confirmation gating
+
+    @Test
+    fun `onExportClicked shows the confirmation dialog when coverage is below threshold`() {
+        val coverageTracker = FakeCoverageTracker().apply { belowThreshold = true }
+        val viewModel = viewModel(coverageTracker = coverageTracker)
+        var exportCalls = 0
+
+        viewModel.onExportClicked { exportCalls++ }
+
+        assertThat(viewModel.uiState.value.showExportConfirmationDialog).isTrue()
+        assertThat(exportCalls).isEqualTo(0)
+    }
+
+    @Test
+    fun `onExportClicked exports directly when coverage is at or above threshold`() {
+        val coverageTracker = FakeCoverageTracker().apply { belowThreshold = false }
+        val viewModel = viewModel(coverageTracker = coverageTracker)
+        var exportCalls = 0
+
+        viewModel.onExportClicked { exportCalls++ }
+
+        assertThat(viewModel.uiState.value.showExportConfirmationDialog).isFalse()
+        assertThat(exportCalls).isEqualTo(1)
+    }
+
+    @Test
+    fun `onDismissExportConfirmation hides the confirmation dialog`() {
+        val coverageTracker = FakeCoverageTracker().apply { belowThreshold = true }
+        val viewModel = viewModel(coverageTracker = coverageTracker)
+        viewModel.onExportClicked {}
+
+        viewModel.onDismissExportConfirmation()
+
+        assertThat(viewModel.uiState.value.showExportConfirmationDialog).isFalse()
     }
 }

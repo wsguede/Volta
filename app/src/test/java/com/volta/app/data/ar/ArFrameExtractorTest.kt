@@ -2,6 +2,7 @@ package com.volta.app.data.ar
 
 import com.google.common.truth.Truth.assertThat
 import java.nio.ByteBuffer
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class ArFrameExtractorTest {
@@ -100,5 +101,45 @@ class ArFrameExtractorTest {
         )
 
         assertThat(nv21).isEqualTo(byteArrayOf(1, 2, 3, 4, 20, 10))
+    }
+
+    @Test
+    fun `rejects an odd width`() {
+        val luma = ByteArray(6)
+        val buffer = ByteBuffer.wrap(byteArrayOf(0, 0, 0))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            extractNv21(
+                luma = luma,
+                uBuffer = buffer,
+                uRowStride = 3,
+                uPixelStride = 1,
+                vBuffer = buffer,
+                vRowStride = 3,
+                vPixelStride = 1,
+                width = 3,
+                height = 2
+            )
+        }
+    }
+
+    @Test
+    fun `rejects an odd height`() {
+        val luma = ByteArray(6)
+        val buffer = ByteBuffer.wrap(byteArrayOf(0, 0, 0))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            extractNv21(
+                luma = luma,
+                uBuffer = buffer,
+                uRowStride = 2,
+                uPixelStride = 1,
+                vBuffer = buffer,
+                vRowStride = 2,
+                vPixelStride = 1,
+                width = 2,
+                height = 3
+            )
+        }
     }
 }

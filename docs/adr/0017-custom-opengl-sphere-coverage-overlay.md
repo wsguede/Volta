@@ -45,6 +45,14 @@ GLES/Android dependency, so it's unit-tested directly (`SphereMeshBuilderTest`) 
 `extractLuma`/`extractNv21` are — only the actual GLES draw calls in `SphereOverlayRenderer` itself
 are left untested, consistent with `CameraQuadRenderer`'s precedent.
 
+`SphereMeshBuilder.kt` itself lives in `domain/coverage/`, alongside `SphereCoverageTracker`, not
+`data/ar/` next to the renderer that consumes it — raised independently by both reviewers of the PR
+that introduced this ADR. Nothing about it needs Android or GLES; keeping domain-pure logic in
+`domain/` regardless of which layer happens to be its only current caller is the more consistent
+reading of AGENTS.md's layer table, and it puts the mesh math next to the `CoverageGrid`/
+`SphereCoverageTracker` types it's built from. `SphereOverlayRenderer` (`data/ar/`) imports
+`buildUncoveredCellVertices` from `domain/coverage/` the same way it already imports `CoverageGrid`.
+
 ## Consequences
 
 - No new Gradle dependency, no new ADR-worthy dependency choice beyond this one.

@@ -31,10 +31,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -82,6 +80,10 @@ fun CaptureScreen(
     }
 
     LaunchedEffect(Unit) {
+        // Fires both on first launch and whenever this screen re-enters composition after
+        // returning from export (see CaptureViewModel.startSession's doc) — the composable leaves
+        // composition while another destination is on top, so this reruns on re-entry.
+        viewModel.startSession()
         checkAndRequestInitialPermissions(context, viewModel) { permissionsLauncher.launch(it) }
     }
 
@@ -99,7 +101,12 @@ fun CaptureScreen(
         onScreenResumed = viewModel::onScreenResumed,
         onScreenPaused = viewModel::onScreenPaused,
         flushSessionPause = viewModel::flushSessionPause,
-        onExport = onExport,
+        onExportClicked = { viewModel.onExportClicked(onExport) },
+        onConfirmExport = {
+            viewModel.onDismissExportConfirmation()
+            onExport()
+        },
+        onDismissExportConfirmation = viewModel::onDismissExportConfirmation,
         onSettings = onSettings,
         onRequestCameraPermission = {
             permissionsLauncher.launch(arrayOf(Manifest.permission.CAMERA))
@@ -181,12 +188,14 @@ private fun checkAndRequestInitialPermissions(
 @Composable
 internal fun CaptureContent(
     uiState: CaptureUiState,
-    onExport: () -> Unit,
+    onExportClicked: () -> Unit,
     onSettings: () -> Unit,
     cameraRenderer: GLSurfaceView.Renderer = NoOpGlRenderer,
     onScreenResumed: () -> Unit = {},
     onScreenPaused: () -> Unit = {},
     flushSessionPause: () -> Unit = {},
+    onConfirmExport: () -> Unit = {},
+    onDismissExportConfirmation: () -> Unit = {},
     onRequestCameraPermission: () -> Unit = {},
     onOpenAppSettings: () -> Unit = {}
 ) {
@@ -215,7 +224,9 @@ internal fun CaptureContent(
                     onScreenResumed = onScreenResumed,
                     onScreenPaused = onScreenPaused,
                     flushSessionPause = flushSessionPause,
-                    onExport = onExport
+                    onExportClicked = onExportClicked,
+                    onConfirmExport = onConfirmExport,
+                    onDismissExportConfirmation = onDismissExportConfirmation
                 )
                 CapturePermissionState.Denied -> CameraPermissionDeniedCard(
                     onOpenAppSettings = onOpenAppSettings,
@@ -251,10 +262,10 @@ private fun CaptureActiveContent(
     onScreenResumed: () -> Unit,
     onScreenPaused: () -> Unit,
     flushSessionPause: () -> Unit,
-    onExport: () -> Unit
+    onExportClicked: () -> Unit,
+    onConfirmExport: () -> Unit,
+    onDismissExportConfirmation: () -> Unit
 ) {
-    var showExportConfirmation by remember { mutableStateOf(false) }
-
     Box(modifier = Modifier.fillMaxSize()) {
         ArCameraPreview(
             renderer = cameraRenderer,
@@ -268,24 +279,18 @@ private fun CaptureActiveContent(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.weight(1f))
-            Text("Frames: ${uiState.framesCaptured}")
+            Text("${uiState.framesCaptured} frames captured")
             Text(
-                "Coverage: ${
+                "${
                     String.format(
                         java.util.Locale.US,
                         "%.0f",
                         uiState.coveragePercent
                     )
-                }%"
+                }% covered"
             )
             Button(
-                onClick = {
-                    if (uiState.isCoverageBelowWarningThreshold) {
-                        showExportConfirmation = true
-                    } else {
-                        onExport()
-                    }
-                },
+                onClick = onExportClicked,
                 enabled = uiState.framesCaptured > 0
             ) {
                 Text("Export")
@@ -294,13 +299,10 @@ private fun CaptureActiveContent(
         }
     }
 
-    if (showExportConfirmation) {
+    if (uiState.showExportConfirmationDialog) {
         ExportConfirmationDialog(
-            onConfirm = {
-                showExportConfirmation = false
-                onExport()
-            },
-            onDismiss = { showExportConfirmation = false }
+            onConfirm = onConfirmExport,
+            onDismiss = onDismissExportConfirmation
         )
     }
 }
@@ -476,7 +478,7 @@ fun PreviewCaptureContent() {
                 coveragePercent = 82f,
                 isCoverageBelowWarningThreshold = false
             ),
-            onExport = {},
+            onExportClicked = {},
             onSettings = {}
         )
     }
@@ -488,7 +490,7 @@ fun PreviewCaptureContentNotRequested() {
     VoltaTheme {
         CaptureContent(
             uiState = CaptureUiState(),
-            onExport = {},
+            onExportClicked = {},
             onSettings = {}
         )
     }
@@ -500,7 +502,7 @@ fun PreviewCaptureContentDenied() {
     VoltaTheme {
         CaptureContent(
             uiState = CaptureUiState(cameraPermission = CapturePermissionState.Denied),
-            onExport = {},
+            onExportClicked = {},
             onSettings = {}
         )
     }
@@ -512,7 +514,7 @@ fun PreviewCaptureContentPermanentlyDenied() {
     VoltaTheme {
         CaptureContent(
             uiState = CaptureUiState(cameraPermission = CapturePermissionState.PermanentlyDenied),
-            onExport = {},
+            onExportClicked = {},
             onSettings = {}
         )
     }
@@ -529,7 +531,7 @@ fun PreviewCaptureContentGpsUnavailable() {
                 coveragePercent = 20f,
                 gpsStatus = CaptureGpsStatus.Unavailable
             ),
-            onExport = {},
+            onExportClicked = {},
             onSettings = {}
         )
     }
@@ -540,5 +542,23 @@ fun PreviewCaptureContentGpsUnavailable() {
 fun PreviewExportConfirmationDialog() {
     VoltaTheme {
         ExportConfirmationDialog(onConfirm = {}, onDismiss = {})
+    }
+}
+
+@Preview
+@Composable
+fun PreviewCaptureContentExportConfirmation() {
+    VoltaTheme {
+        CaptureContent(
+            uiState = CaptureUiState(
+                cameraPermission = CapturePermissionState.Granted,
+                framesCaptured = 12,
+                coveragePercent = 45f,
+                isCoverageBelowWarningThreshold = true,
+                showExportConfirmationDialog = true
+            ),
+            onExportClicked = {},
+            onSettings = {}
+        )
     }
 }
