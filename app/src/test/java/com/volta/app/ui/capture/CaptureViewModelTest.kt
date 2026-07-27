@@ -42,6 +42,8 @@ private class FakeArSessionManager : ArSessionManager {
         private set
     var flushPendingPauseCalls = 0
         private set
+    var cancelPendingCapturesCalls = 0
+        private set
 
     override fun resume() {
         resumeCalls++
@@ -53,6 +55,10 @@ private class FakeArSessionManager : ArSessionManager {
 
     override fun flushPendingPause() {
         flushPendingPauseCalls++
+    }
+
+    override fun cancelPendingCaptures() {
+        cancelPendingCapturesCalls++
     }
 }
 
@@ -359,6 +365,16 @@ class CaptureViewModelTest {
     }
 
     // Session start resets per-session singletons
+
+    @Test
+    fun `startSession cancels any pending captures from a previous session first`() {
+        val arSessionManager = FakeArSessionManager()
+        val viewModel = viewModel(arSessionManager = arSessionManager)
+
+        viewModel.startSession()
+
+        assertThat(arSessionManager.cancelPendingCapturesCalls).isEqualTo(1)
+    }
 
     @Test
     fun `startSession resets the frame capture trigger`() {

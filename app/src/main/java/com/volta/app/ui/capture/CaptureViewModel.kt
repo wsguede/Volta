@@ -55,8 +55,14 @@ class CaptureViewModel @Inject constructor(
      * session in the same app process would start already holding the first session's frame count
      * and covered cells, silently violating AGENTS.md's "session-focused, retains nothing"
      * constraint and letting stale coverage bypass the export-confirmation threshold.
+     *
+     * [ArSessionManager.cancelPendingCaptures] must run first: a frame approved right at the end of
+     * the previous session compresses on a background dispatcher independent of this reset, so
+     * without cancelling it first, that late completion could write a stray frame into the state
+     * being reset here right after this call returns.
      */
     fun startSession() {
+        arSessionManager.cancelPendingCaptures()
         frameCaptureTrigger.reset()
         coverageTracker.reset()
         _uiState.update { it.copy(isSessionActive = true) }

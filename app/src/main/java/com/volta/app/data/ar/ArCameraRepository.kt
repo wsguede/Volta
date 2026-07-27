@@ -29,7 +29,9 @@ import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +69,14 @@ class ArCameraRepository @Inject constructor(
     private val resumed = AtomicBoolean(false)
     private val cameraQuadRenderer = CameraQuadRenderer()
     private val sphereOverlayRenderer = SphereOverlayRenderer()
+
+    // Parent job for in-flight JPEG-compression coroutines only (not all of applicationScope), so
+    // cancelPendingCaptures() can cancel just those without touching unrelated application-scoped
+    // work. @Volatile for visibility across the GL thread (launches) and the caller thread of
+    // cancelPendingCaptures() (the ViewModel, on the main thread) — see its own doc for why this
+    // exists. Once cancelled a Job can't be reused, so cancelPendingCaptures() replaces it.
+    @Volatile
+    private var captureJobs: Job = Job()
 
     private var cameraTextureId = 0
     private var activeSession: Session? = null
@@ -137,6 +147,11 @@ class ArCameraRepository @Inject constructor(
         ticker.forceTick(resumed.get()) { unexpected ->
             Timber.e(unexpected, "Unexpected error flushing a pending ARCore session pause")
         }
+    }
+
+    override fun cancelPendingCaptures() {
+        captureJobs.cancel()
+        captureJobs = Job()
     }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
@@ -278,23 +293,42 @@ class ArCameraRepository @Inject constructor(
             val approval = frameCaptureTrigger.evaluate(pose, sharpness) ?: return
             val uPlane = image.planes[1]
             val vPlane = image.planes[2]
-            val nv21 = extractNv21(
-                luma = luma,
-                uBuffer = uPlane.buffer,
-                uRowStride = uPlane.rowStride,
-                uPixelStride = uPlane.pixelStride,
-                vBuffer = vPlane.buffer,
-                vRowStride = vPlane.rowStride,
-                vPixelStride = vPlane.pixelStride,
-                width = image.width,
-                height = image.height
-            )
+            val nv21 = try {
+                extractNv21(
+                    luma = luma,
+                    uBuffer = uPlane.buffer,
+                    uRowStride = uPlane.rowStride,
+                    uPixelStride = uPlane.pixelStride,
+                    vBuffer = vPlane.buffer,
+                    vRowStride = vPlane.rowStride,
+                    vPixelStride = vPlane.pixelStride,
+                    width = image.width,
+                    height = image.height
+                )
+            } catch (unexpectedDimensions: IllegalArgumentException) {
+                // Camera resolutions are effectively always even, but this is real ARCore/OEM
+                // camera-HAL data, not something we control — drop this one frame rather than
+                // crashing the GL thread if that assumption is ever wrong.
+                Timber.w(
+                    unexpectedDimensions,
+                    "Dropping an approved frame with odd image dimensions (%dx%d)",
+                    image.width,
+                    image.height
+                )
+                return
+            }
             // Each approved frame gets its own launch with no coalescing/backpressure. Not a
             // problem today: the angular-spacing threshold this same call was just approved
             // against keeps approvals naturally spaced out. Revisit if that threshold is ever
             // tuned loose enough for approvals to cluster faster than compression drains them.
-            applicationScope.launch(defaultDispatcher) {
+            // Scoped under captureJobs (not applicationScope's own Job) so cancelPendingCaptures()
+            // can cancel exactly this in-flight work — see its doc and ArSessionManager's.
+            applicationScope.launch(defaultDispatcher + captureJobs) {
                 val jpeg = encodeNv21ToJpeg(nv21, image.width, image.height, JPEG_QUALITY)
+                // Cooperative cancellation only takes effect at a check like this one — without
+                // it, a job already past this point when cancelPendingCaptures() runs would still
+                // go on to write a stale frame into the freshly-reset session state.
+                ensureActive()
                 frameCaptureTrigger.record(approval, jpeg)
                 coverageTracker.markCovered(pose)
             }
