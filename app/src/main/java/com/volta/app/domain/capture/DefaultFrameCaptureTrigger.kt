@@ -37,14 +37,12 @@ class DefaultFrameCaptureTrigger(
         get() = synchronized(this) { frames.toList() }
 
     @Synchronized
+    override fun isFarEnoughToCapture(pose: DevicePose): Boolean = isFarEnoughFromLastCapture(pose)
+
+    @Synchronized
     override fun evaluate(pose: DevicePose, sharpnessScore: Float): CaptureApproval? {
+        if (!isFarEnoughFromLastCapture(pose)) return null
         if (!blurDetector.isSharp(sharpnessScore)) return null
-        val last = lastCapturedPose
-        if (last != null &&
-            angularDistanceDegrees(pose, last) + ANGULAR_EPSILON_DEGREES < angularThresholdDegrees
-        ) {
-            return null
-        }
         return CaptureApproval(pose)
     }
 
@@ -59,6 +57,19 @@ class DefaultFrameCaptureTrigger(
         }
         _capturedFrameCount.value = frames.size
         return CaptureEvent(pose)
+    }
+
+    @Synchronized
+    override fun reset() {
+        frames.clear()
+        lastCapturedPose = null
+        _capturedFrameCount.value = 0
+    }
+
+    private fun isFarEnoughFromLastCapture(pose: DevicePose): Boolean {
+        val last = lastCapturedPose ?: return true
+        return angularDistanceDegrees(pose, last) + ANGULAR_EPSILON_DEGREES >=
+            angularThresholdDegrees
     }
 
     // Great-circle angular distance treating yaw as longitude and pitch as latitude; roll is

@@ -4,6 +4,8 @@ data class CaptureUiState(
     val isSessionActive: Boolean = false,
     val framesCaptured: Int = 0,
     val coveragePercent: Float = 0f,
+    val isCoverageBelowWarningThreshold: Boolean = true,
+    val showExportConfirmationDialog: Boolean = false,
     val isArReady: Boolean = false,
     val cameraPermission: CapturePermissionState = CapturePermissionState.NotRequested,
     val gpsStatus: CaptureGpsStatus = CaptureGpsStatus.Acquiring

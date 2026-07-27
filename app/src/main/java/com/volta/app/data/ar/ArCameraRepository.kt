@@ -4,6 +4,7 @@ import android.content.Context
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
+import android.opengl.Matrix
 import android.view.Surface
 import android.view.WindowManager
 import com.google.ar.core.Frame
@@ -11,7 +12,12 @@ import com.google.ar.core.Session
 import com.google.ar.core.exceptions.CameraNotAvailableException
 import com.google.ar.core.exceptions.NotYetAvailableException
 import com.google.ar.core.exceptions.UnavailableException
+import com.volta.app.di.ApplicationScope
+import com.volta.app.di.DefaultDispatcher
 import com.volta.app.domain.ar.ArSessionManager
+import com.volta.app.domain.capture.BlurDetector
+import com.volta.app.domain.capture.FrameCaptureTrigger
+import com.volta.app.domain.coverage.CoverageTracker
 import com.volta.app.domain.model.ArFrame
 import com.volta.app.domain.model.DevicePose
 import com.volta.app.domain.model.TrackingState
@@ -21,12 +27,18 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
@@ -45,12 +57,35 @@ import timber.log.Timber
  * thread), hence [resumed] alone is an [AtomicBoolean].
  */
 @Singleton
-class ArCameraRepository @Inject constructor(@ApplicationContext private val context: Context) :
-    ArSessionManager,
+class ArCameraRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val blurDetector: BlurDetector,
+    private val frameCaptureTrigger: FrameCaptureTrigger,
+    private val coverageTracker: CoverageTracker,
+    @ApplicationScope private val applicationScope: CoroutineScope,
+    @DefaultDispatcher private val defaultDispatcher: CoroutineDispatcher
+) : ArSessionManager,
     GLSurfaceView.Renderer {
 
     private val resumed = AtomicBoolean(false)
     private val cameraQuadRenderer = CameraQuadRenderer()
+    private val sphereOverlayRenderer = SphereOverlayRenderer()
+
+    // Parent job for in-flight JPEG-compression coroutines only (not all of applicationScope), so
+    // cancelPendingCaptures() can cancel just those without touching unrelated application-scoped
+    // work. Must be a SupervisorJob, not a plain Job: a plain Job propagates any one child's
+    // failure (e.g. YuvImage.compressToJpeg choking on malformed image data) up to this job and
+    // back down to every sibling, cancelling all of them — and since this field is only ever
+    // replaced inside cancelPendingCaptures(), a single failed capture would permanently cancel
+    // every later capture for the rest of the session with no crash and no visible signal. A
+    // SupervisorJob isolates each child's failure instead, while still letting an explicit
+    // captureJobs.cancel() cancel every current child (cancellation, unlike failure, always
+    // propagates downward regardless of supervision). @Volatile for visibility across the GL
+    // thread (launches) and the caller thread of cancelPendingCaptures() (the ViewModel, on the
+    // main thread) — see its own doc for why this exists. Once cancelled a Job can't be reused, so
+    // cancelPendingCaptures() replaces it.
+    @Volatile
+    private var captureJobs: Job = SupervisorJob()
 
     private var cameraTextureId = 0
     private var activeSession: Session? = null
@@ -59,6 +94,10 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
     private var displayHeight = 0
     private var displayRotation = Surface.ROTATION_0
     private var displayGeometryDirty = false
+
+    private val viewMatrix = FloatArray(MATRIX_SIZE)
+    private val projectionMatrix = FloatArray(MATRIX_SIZE)
+    private val viewProjectionMatrix = FloatArray(MATRIX_SIZE)
 
     private val _isAvailable = MutableStateFlow(false)
 
@@ -119,9 +158,15 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         }
     }
 
+    override fun cancelPendingCaptures() {
+        captureJobs.cancel()
+        captureJobs = SupervisorJob()
+    }
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         cameraTextureId = createExternalTexture()
         cameraQuadRenderer.createOnGlThread()
+        sphereOverlayRenderer.createOnGlThread()
         hasRenderableFrame = false
         // The Session (if one already exists from before this surface was torn down, e.g. after
         // GLSurfaceView.onPause()/onResume()) must be rebound to the newly created texture — the
@@ -143,6 +188,8 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         }
         if (hasRenderableFrame) {
             cameraQuadRenderer.draw(cameraTextureId)
+            sphereOverlayRenderer.updateGrid(coverageTracker.coverageGrid.value)
+            sphereOverlayRenderer.draw(viewProjectionMatrix)
         } else {
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
         }
@@ -204,22 +251,37 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         _trackingState.value = camera.trackingState.toDomain()
 
         val quaternion = camera.pose.rotationQuaternion
-        _currentPose.tryEmit(
-            DevicePose.fromQuaternion(
-                x = quaternion[0].toDouble(),
-                y = quaternion[1].toDouble(),
-                z = quaternion[2].toDouble(),
-                w = quaternion[3].toDouble()
-            )
+        val pose = DevicePose.fromQuaternion(
+            x = quaternion[0].toDouble(),
+            y = quaternion[1].toDouble(),
+            z = quaternion[2].toDouble(),
+            w = quaternion[3].toDouble()
         )
+        _currentPose.tryEmit(pose)
         if (frame.hasDisplayGeometryChanged()) {
             cameraQuadRenderer.updateTransform(frame)
         }
+        camera.getViewMatrix(viewMatrix, 0)
+        camera.getProjectionMatrix(projectionMatrix, 0, CAMERA_NEAR_PLANE, CAMERA_FAR_PLANE)
+        Matrix.multiplyMM(viewProjectionMatrix, 0, projectionMatrix, 0, viewMatrix, 0)
         hasRenderableFrame = true
-        emitCameraFrame(frame)
+        emitCameraFrame(frame, pose)
     }
 
-    private fun emitCameraFrame(frame: Frame) {
+    /**
+     * Extracts the Y plane (for the [cameraFrames] flow and blur scoring) and, only when
+     * [FrameCaptureTrigger.evaluate] approves the frame, the full NV21 image. JPEG compression is
+     * genuinely CPU-bound, so per [FrameCaptureTrigger.evaluate]'s contract it must not run on this
+     * (GL) thread — the NV21 bytes are copied out synchronously here, while the image is still
+     * open, then handed to a [defaultDispatcher] coroutine that compresses and calls
+     * [FrameCaptureTrigger.record] and [CoverageTracker.markCovered].
+     *
+     * [BlurDetector.sharpnessScore] is itself a non-trivial O(width×height) pass, run once per
+     * frame at up to the display's refresh rate — [FrameCaptureTrigger.isFarEnoughToCapture] is
+     * checked first so it's skipped entirely on frames [FrameCaptureTrigger.evaluate] would reject
+     * on angular-spacing grounds regardless (the common case between two capture points).
+     */
+    private fun emitCameraFrame(frame: Frame, pose: DevicePose) {
         val image = try {
             frame.acquireCameraImage()
         } catch (expected: NotYetAvailableException) {
@@ -227,20 +289,70 @@ class ArCameraRepository @Inject constructor(@ApplicationContext private val con
         }
         try {
             val yPlane = image.planes[0]
-            _cameraFrames.tryEmit(
-                ArFrame(
-                    luma = extractLuma(
-                        buffer = yPlane.buffer,
-                        rowStride = yPlane.rowStride,
-                        width = image.width,
-                        height = image.height
-                    ),
+            val luma = extractLuma(
+                buffer = yPlane.buffer,
+                rowStride = yPlane.rowStride,
+                width = image.width,
+                height = image.height
+            )
+            _cameraFrames.tryEmit(ArFrame(luma = luma, width = image.width, height = image.height))
+
+            if (!frameCaptureTrigger.isFarEnoughToCapture(pose)) return
+            val sharpness = blurDetector.sharpnessScore(luma, image.width, image.height)
+            val approval = frameCaptureTrigger.evaluate(pose, sharpness) ?: return
+            val uPlane = image.planes[1]
+            val vPlane = image.planes[2]
+            val nv21 = try {
+                extractNv21(
+                    luma = luma,
+                    uBuffer = uPlane.buffer,
+                    uRowStride = uPlane.rowStride,
+                    uPixelStride = uPlane.pixelStride,
+                    vBuffer = vPlane.buffer,
+                    vRowStride = vPlane.rowStride,
+                    vPixelStride = vPlane.pixelStride,
                     width = image.width,
                     height = image.height
                 )
-            )
+            } catch (unexpectedDimensions: IllegalArgumentException) {
+                // Camera resolutions are effectively always even, but this is real ARCore/OEM
+                // camera-HAL data, not something we control — drop this one frame rather than
+                // crashing the GL thread if that assumption is ever wrong.
+                Timber.w(
+                    unexpectedDimensions,
+                    "Dropping an approved frame with odd image dimensions (%dx%d)",
+                    image.width,
+                    image.height
+                )
+                return
+            }
+            // Each approved frame gets its own launch with no coalescing/backpressure. Not a
+            // problem today: the angular-spacing threshold this same call was just approved
+            // against keeps approvals naturally spaced out. Revisit if that threshold is ever
+            // tuned loose enough for approvals to cluster faster than compression drains them.
+            // Scoped under captureJobs (not applicationScope's own Job) so cancelPendingCaptures()
+            // can cancel exactly this in-flight work — see its doc and ArSessionManager's.
+            applicationScope.launch(defaultDispatcher + captureJobs) {
+                val jpeg = encodeNv21ToJpeg(nv21, image.width, image.height, JPEG_QUALITY)
+                // Cooperative cancellation only takes effect at a check like this one — without
+                // it, a job already past this point when cancelPendingCaptures() runs would still
+                // go on to write a stale frame into the freshly-reset session state.
+                ensureActive()
+                frameCaptureTrigger.record(approval, jpeg)
+                coverageTracker.markCovered(pose)
+            }
         } finally {
             image.close()
         }
+    }
+
+    private companion object {
+        const val JPEG_QUALITY = 90
+        const val MATRIX_SIZE = 16
+
+        // Clipping planes for the sphere overlay's view/projection matrices (SphereOverlayRenderer
+        // draws its mesh at SphereOverlayRadius, comfortably inside this range).
+        const val CAMERA_NEAR_PLANE = 0.1f
+        const val CAMERA_FAR_PLANE = 100f
     }
 }

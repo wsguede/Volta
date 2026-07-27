@@ -3,29 +3,91 @@ package com.volta.app.ui.capture
 import android.opengl.GLSurfaceView
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.volta.app.domain.ar.ArSessionManager
+import com.volta.app.domain.capture.FrameCaptureTrigger
+import com.volta.app.domain.coverage.CoverageTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 @HiltViewModel
 class CaptureViewModel @Inject constructor(
     private val arSessionManager: ArSessionManager,
+    private val frameCaptureTrigger: FrameCaptureTrigger,
+    private val coverageTracker: CoverageTracker,
     val cameraRenderer: GLSurfaceView.Renderer
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CaptureUiState())
     val uiState: StateFlow<CaptureUiState> = _uiState.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            combine(
+                frameCaptureTrigger.capturedFrameCount,
+                coverageTracker.coveragePercent
+            ) { frameCount, coverageFraction -> frameCount to coverageFraction }
+                .collect { (frameCount, coverageFraction) ->
+                    _uiState.update {
+                        it.copy(
+                            framesCaptured = frameCount,
+                            coveragePercent = coverageFraction * PERCENT_SCALE,
+                            isCoverageBelowWarningThreshold =
+                            coverageTracker.isBelowWarningThreshold()
+                        )
+                    }
+                }
+        }
+    }
+
+    /**
+     * Called once per capture session start (see [com.volta.app.ui.capture.CaptureScreen]'s
+     * `LaunchedEffect`, which fires both on first launch and whenever the screen re-enters
+     * composition after returning from export — [arSessionManager], [frameCaptureTrigger], and
+     * [coverageTracker] are all process-lifetime `@Singleton`s with no session lifecycle of their
+     * own). Resetting the trigger and tracker here is required, not optional: without it, a second
+     * session in the same app process would start already holding the first session's frame count
+     * and covered cells, silently violating AGENTS.md's "session-focused, retains nothing"
+     * constraint and letting stale coverage bypass the export-confirmation threshold.
+     *
+     * [ArSessionManager.cancelPendingCaptures] must run first: a frame approved right at the end of
+     * the previous session compresses on a background dispatcher independent of this reset, so
+     * without cancelling it first, that late completion could write a stray frame into the state
+     * being reset here right after this call returns.
+     */
     fun startSession() {
+        arSessionManager.cancelPendingCaptures()
+        frameCaptureTrigger.reset()
+        coverageTracker.reset()
         _uiState.update { it.copy(isSessionActive = true) }
     }
 
     fun stopSession() {
         _uiState.update { it.copy(isSessionActive = false) }
+    }
+
+    /**
+     * Called when the export button is tapped. Below the coverage warning threshold, shows the
+     * confirmation dialog instead of exporting immediately; [onExport] is a navigation lambda the
+     * Composable owns (this ViewModel does not perform navigation itself), so it is only invoked
+     * directly when no confirmation is needed.
+     */
+    fun onExportClicked(onExport: () -> Unit) {
+        if (_uiState.value.isCoverageBelowWarningThreshold) {
+            _uiState.update { it.copy(showExportConfirmationDialog = true) }
+        } else {
+            onExport()
+        }
+    }
+
+    fun onDismissExportConfirmation() {
+        _uiState.update { it.copy(showExportConfirmationDialog = false) }
     }
 
     /** Called from [com.volta.app.ui.capture.CaptureScreen] on `ON_RESUME`. Only resumes the
@@ -83,5 +145,11 @@ class CaptureViewModel @Inject constructor(
     @VisibleForTesting(otherwise = VisibleForTesting.PROTECTED)
     public override fun onCleared() {
         arSessionManager.pause()
+    }
+
+    private companion object {
+        // CoverageTracker.coveragePercent is a 0..1 fraction; CaptureUiState.coveragePercent is
+        // displayed as a whole percentage (e.g. "73%").
+        const val PERCENT_SCALE = 100f
     }
 }
