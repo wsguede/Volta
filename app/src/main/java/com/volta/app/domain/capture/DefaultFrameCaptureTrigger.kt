@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class DefaultFrameCaptureTrigger(
     private val angularThresholdDegrees: Float = DEFAULT_ANGULAR_THRESHOLD_DEGREES,
-    private val blurThreshold: Float = DEFAULT_BLUR_THRESHOLD,
+    private val blurDetector: BlurDetector = LaplacianBlurDetector(),
     private val maxStoredFrames: Int = DEFAULT_MAX_STORED_FRAMES,
     private val onFrameDropped: () -> Unit = {}
 ) : FrameCaptureTrigger {
@@ -38,7 +38,7 @@ class DefaultFrameCaptureTrigger(
 
     @Synchronized
     override fun evaluate(pose: DevicePose, sharpnessScore: Float): CaptureApproval? {
-        if (sharpnessScore < blurThreshold) return null
+        if (!blurDetector.isSharp(sharpnessScore)) return null
         val last = lastCapturedPose
         if (last != null &&
             angularDistanceDegrees(pose, last) + ANGULAR_EPSILON_DEGREES < angularThresholdDegrees
@@ -71,11 +71,6 @@ class DefaultFrameCaptureTrigger(
 
     companion object {
         const val DEFAULT_ANGULAR_THRESHOLD_DEGREES = 15f
-
-        // Single source of truth with LaplacianBlurDetector.DEFAULT_SHARPNESS_THRESHOLD — both
-        // describe the same "is this frame sharp enough" cutoff. Keeping one constant prevents
-        // silent drift once either gets tuned against real device frames (#46).
-        const val DEFAULT_BLUR_THRESHOLD = LaplacianBlurDetector.DEFAULT_SHARPNESS_THRESHOLD
         const val DEFAULT_MAX_STORED_FRAMES = 150
 
         // Tolerance for trigonometric rounding error, so an exact-threshold pose (e.g. precisely

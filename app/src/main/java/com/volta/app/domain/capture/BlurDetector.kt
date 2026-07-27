@@ -10,4 +10,12 @@ package com.volta.app.domain.capture
 interface BlurDetector {
     fun sharpnessScore(frameData: ByteArray, width: Int, height: Int): Float
     fun isSharp(score: Float): Boolean
+
+    companion object {
+        // Provisional default shared by every BlurDetector implementation, pending device
+        // tuning — see #46. Lives here (not on a concrete implementation) so callers configuring
+        // a threshold-dependent default — e.g. DefaultFrameCaptureTrigger's BlurDetector param —
+        // don't have to depend on a specific implementation to find it.
+        const val DEFAULT_SHARPNESS_THRESHOLD = 50f
+    }
 }

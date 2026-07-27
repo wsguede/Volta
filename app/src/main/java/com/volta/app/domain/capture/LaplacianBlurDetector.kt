@@ -3,11 +3,14 @@ package com.volta.app.domain.capture
 /**
  * Scores sharpness via Laplacian variance on a luma (Y) plane: the variance of the second
  * derivative of pixel intensity. A flat/blurry image has near-zero variance; a sharp, detailed
- * image has high variance. Border pixels are excluded — only interior pixels have a full
+ * image has high variance. Chosen over alternatives like Sobel/Tenengrad or FFT-based
+ * high-frequency energy scoring for its simplicity and single-pass computability, per issue
+ * #11's specified algorithm. Border pixels are excluded — only interior pixels have a full
  * 4-neighbor Laplacian. [threshold] is a provisional default pending device tuning — see #46.
  */
-class LaplacianBlurDetector(private val threshold: Float = DEFAULT_SHARPNESS_THRESHOLD) :
-    BlurDetector {
+class LaplacianBlurDetector(
+    private val threshold: Float = BlurDetector.DEFAULT_SHARPNESS_THRESHOLD
+) : BlurDetector {
 
     override fun sharpnessScore(frameData: ByteArray, width: Int, height: Int): Float {
         require(frameData.size == width * height) {
@@ -48,9 +51,4 @@ class LaplacianBlurDetector(private val threshold: Float = DEFAULT_SHARPNESS_THR
     override fun isSharp(score: Float): Boolean = score >= threshold
 
     private fun luma(byte: Byte): Int = byte.toInt() and 0xFF
-
-    companion object {
-        // Starting point only — needs tuning against real device frames (see issue #46).
-        const val DEFAULT_SHARPNESS_THRESHOLD = 50f
-    }
 }
