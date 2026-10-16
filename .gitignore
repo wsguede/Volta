@@ -37,3 +37,7 @@ docs/superpowers/
 
 # Git worktrees
 .worktrees/
+
+# Nix / direnv
+.direnv/
+result

@@ -10,6 +10,8 @@ Volta is a native Android photosphere capture app. Users sweep their phone in a 
 
 ## Essential Commands
 
+> **No `java` on `PATH`?** Agent shells are non-interactive, so direnv never loads the Nix dev shell. Wrap every Gradle command: `nix develop --command ./gradlew <tasks>`. See [Build Environment](#build-environment).
+
 ### Building
 
 ```bash
@@ -58,6 +60,12 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | Android SDK | API 37 (`compileSdk`), API 35 (`targetSdk`) | `compileSdk` and `targetSdk` are tracked separately |
 | Kotlin | 2.4.0 | Built into AGP 9+; no `org.jetbrains.kotlin.android` plugin needed, only the Compose compiler plugin. Pinned to 2.4.0 (not the latest 2.4.10) because CodeQL's Kotlin extractor doesn't yet support patch releases past 2.4.0 |
 | Min Android | API 30 | Android 11+ |
+
+**Nix dev shell:** `flake.nix` provides a pinned JDK 17 and Android SDK (platforms, build-tools, platform-tools). It's optional, and CI doesn't use it.
+
+- Changing the SDK means editing the flake: the SDK lives in the read-only Nix store, so `sdkmanager` and AGP auto-installs fail with `The SDK directory is not writable`. When `compileSdk`/`targetSdk` change in `app/build.gradle.kts`, update `platformVersions` (and `buildToolsVersion` if needed) in `flake.nix` in the same change.
+- Flakes only see git-tracked files — `git add` new or renamed files the flake depends on before running `nix develop`.
+- Don't set `sdk.dir` in `local.properties` to a `/nix/store` path; it goes stale on `nix flake update`. The shell exports `ANDROID_HOME` instead.
 
 Dependencies are managed via the Gradle version catalog at `gradle/libs.versions.toml`. Do not add dependency versions directly in `build.gradle.kts` — add them to the catalog.
 
