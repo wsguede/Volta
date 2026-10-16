@@ -28,7 +28,8 @@ Diagnose and resolve common Android build and runtime failures.
 
 | Category | Symptoms | Common fixes |
 |---|---|---|
-| SDK not configured | `SDK location not found` | `local.properties` is gitignored (per-machine) — set `sdk.dir` there or export `ANDROID_HOME`. This blocks `lint`, tests, and build entirely (not just the affected task), so check this first on a fresh machine |
+| SDK not configured | `SDK location not found` | `local.properties` is gitignored (per-machine) — set `sdk.dir` there or export `ANDROID_HOME`. If `flake.nix` exists and Nix is installed, run inside `nix develop --command ./gradlew …` instead — it exports `ANDROID_HOME` and JDK 17. This blocks `lint`, tests, and build entirely (not just the affected task), so check this first on a fresh machine |
+| Read-only Nix SDK | `Failed to install the following SDK components` … `The SDK directory is not writable (/nix/store/…)` | The build needs a platform/build-tools version the Nix SDK doesn't include. Add it to `platformVersions` / `buildToolsVersion` in `flake.nix` and re-enter the shell — never try `sdkmanager` |
 | SDK version mismatch | `compileSdk`, `targetSdk`, or `minSdk` errors | Check `build.gradle.kts` and `libs.versions.toml` for version alignment |
 | Dependency conflict | `DuplicateClass`, version resolution errors | Check dependency tree with `dependencies` task, add exclusions or version constraints |
 | ARCore compatibility | Theme or API removed errors | ARCore may reference deprecated platform APIs — check ARCore version compatibility |
