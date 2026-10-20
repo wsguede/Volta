@@ -129,6 +129,20 @@ jobs:
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Generate update manifest
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          CHANGELOG: ${{ steps.changelog.outputs.changelog }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          printf '%s\n' "$CHANGELOG" > "$RUNNER_TEMP/notes.md"
+          .github/scripts/generate-update-manifest.sh \
+            app/build/outputs/apk/release/output-metadata.json \
+            "$TAG" \
+            "$GITHUB_REPOSITORY" \
+            "$RUNNER_TEMP/notes.md" > "$RUNNER_TEMP/update.json"
+          cat "$RUNNER_TEMP/update.json"
+
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v3
@@ -138,5 +152,7 @@ jobs:
           body: ${{ steps.changelog.outputs.changelog }}
           draft: false
           prerelease: false
-          files: app/build/outputs/apk/release/*.apk
+          files: |
+            app/build/outputs/apk/release/*.apk
+            ${{ runner.temp }}/update.json
           generate_release_notes: false
