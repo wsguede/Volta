@@ -103,12 +103,15 @@ app/
     │       │   ├── ar/               # ArSessionManager (ARCore session data source interface)
     │       │   ├── capture/          # Frame capture triggering, blur detection
     │       │   ├── coverage/         # Sphere coverage tracking
-    │       │   └── stitching/        # Stitching orchestration, OutputResolution
+    │       │   ├── stitching/        # Stitching orchestration, OutputResolution
+    │       │   ├── time/             # Clock (injected wall-clock time)
+    │       │   └── update/           # Update manifest model and check policy (ADR 0018)
     │       ├── data/
     │       │   ├── ar/               # ARCore camera integration (owns the camera exclusively —
     │       │   │                     #   see ADR 0013; supersedes the earlier CameraX approach)
     │       │   ├── gps/              # Location / GPS
-    │       │   └── export/           # MediaStore / file system
+    │       │   ├── export/           # MediaStore / file system
+    │       │   └── update/           # Update download and install (ADR 0018)
     │       ├── di/                   # Hilt modules
     │       ├── navigation/           # Nav graph
     │       └── VoltaApplication.kt
@@ -230,7 +233,7 @@ chore(ci): add ktlint check to CI pipeline
 docs(adr): add ADR for OpenCV stitching choice
 ```
 
-Valid scopes: `capture`, `coverage`, `stitching`, `camera`, `ar`, `gps`, `export`, `ui`, `di`, `ci`, `adr`, `infra`.
+Valid scopes: `capture`, `coverage`, `stitching`, `camera`, `ar`, `gps`, `export`, `ui`, `di`, `ci`, `adr`, `infra`, `update`.
 
 ---
 
