@@ -24,7 +24,8 @@ abstract class UpdateModule {
     abstract fun bindDeviceSdkDataSource(impl: BuildVersionDeviceSdkDataSource): DeviceSdkDataSource
 
     companion object {
-        // UpdateRepository is bound in #58; nothing injects this until then.
+        // UpdateRepository is bound in #58. Injecting this use case before then fails the build
+        // with a Dagger MissingBinding error for UpdateRepository.
         @Provides
         fun provideCheckForUpdateUseCase(
             updateRepository: UpdateRepository,

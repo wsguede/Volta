@@ -12,7 +12,9 @@ interface UpdateRepository {
      *
      * I/O and parse errors are returned as [Result.failure], never thrown. Cancellation is the
      * exception: implementations must rethrow [kotlinx.coroutines.CancellationException] rather
-     * than wrap it, so don't build this on a bare `runCatching`.
+     * than wrap it, so don't build this on a bare `runCatching`. Report timeouts as
+     * [Result.failure] too: a `withTimeout` here would throw `TimeoutCancellationException`, which
+     * looks like the caller being cancelled, so use the connection's own timeouts instead.
      */
     suspend fun fetchLatestManifest(): Result<UpdateManifest>
 
