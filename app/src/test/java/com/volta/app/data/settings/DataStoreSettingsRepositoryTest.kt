@@ -107,6 +107,86 @@ class DataStoreSettingsRepositoryTest {
     }
 
     @Test
+    fun `autoCheckUpdates defaults to true when nothing persisted`() = runTest {
+        val repository =
+            DataStoreSettingsRepository(dataStore(tempFolder.newFile("settings.preferences_pb")))
+
+        repository.autoCheckUpdates.test {
+            assertThat(awaitItem()).isTrue()
+        }
+    }
+
+    @Test
+    fun `setAutoCheckUpdates updates autoCheckUpdates`() = runTest {
+        val repository =
+            DataStoreSettingsRepository(dataStore(tempFolder.newFile("settings.preferences_pb")))
+
+        repository.setAutoCheckUpdates(false)
+
+        repository.autoCheckUpdates.test {
+            assertThat(awaitItem()).isFalse()
+        }
+    }
+
+    @Test
+    fun `lastUpdateCheckMillis is null when nothing persisted`() = runTest {
+        val repository =
+            DataStoreSettingsRepository(dataStore(tempFolder.newFile("settings.preferences_pb")))
+
+        repository.lastUpdateCheckMillis.test {
+            assertThat(awaitItem()).isNull()
+        }
+    }
+
+    @Test
+    fun `setLastUpdateCheckMillis updates lastUpdateCheckMillis`() = runTest {
+        val repository =
+            DataStoreSettingsRepository(dataStore(tempFolder.newFile("settings.preferences_pb")))
+
+        repository.setLastUpdateCheckMillis(1_800_000_000_000L)
+
+        repository.lastUpdateCheckMillis.test {
+            assertThat(awaitItem()).isEqualTo(1_800_000_000_000L)
+        }
+    }
+
+    @Test
+    fun `update settings fall back to defaults when the read throws IOException`() = runTest {
+        val corruptingDataStore = object : DataStore<Preferences> {
+            override val data: Flow<Preferences> = flow { throw IOException("corrupted file") }
+
+            override suspend fun updateData(
+                transform: suspend (t: Preferences) -> Preferences
+            ): Preferences = error("not needed for this test")
+        }
+        val repository = DataStoreSettingsRepository(corruptingDataStore)
+
+        repository.autoCheckUpdates.test {
+            assertThat(awaitItem()).isTrue()
+            awaitComplete()
+        }
+        repository.lastUpdateCheckMillis.test {
+            assertThat(awaitItem()).isNull()
+            awaitComplete()
+        }
+    }
+
+    @Test
+    fun `update setters do not throw when the write fails with IOException`() = runTest {
+        val failingDataStore = object : DataStore<Preferences> {
+            override val data: Flow<Preferences> = flow { error("not needed for this test") }
+
+            override suspend fun updateData(
+                transform: suspend (t: Preferences) -> Preferences
+            ): Preferences = throw IOException("disk full")
+        }
+        val repository = DataStoreSettingsRepository(failingDataStore)
+
+        repository.setAutoCheckUpdates(false)
+        repository.setLastUpdateCheckMillis(1L)
+    }
+
+    @Test
     fun `setOutputResolution does not throw when the write fails with IOException`() = runTest {
         val failingDataStore = object : DataStore<Preferences> {
             override val data: Flow<Preferences> = flow { error("not needed for this test") }

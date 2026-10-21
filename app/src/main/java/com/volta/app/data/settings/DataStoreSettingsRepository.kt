@@ -2,8 +2,10 @@ package com.volta.app.data.settings
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.volta.app.domain.settings.SettingsRepository
 import com.volta.app.domain.stitching.OutputResolution
@@ -18,7 +20,7 @@ class DataStoreSettingsRepository @Inject constructor(
     private val dataStore: DataStore<Preferences>
 ) : SettingsRepository {
 
-    override val outputResolution: Flow<OutputResolution> = dataStore.data
+    private val settingsData: Flow<Preferences> = dataStore.data
         .catch { throwable ->
             if (throwable is IOException) {
                 Timber.e(throwable, "Failed to read settings; falling back to defaults")
@@ -27,6 +29,8 @@ class DataStoreSettingsRepository @Inject constructor(
                 throw throwable
             }
         }
+
+    override val outputResolution: Flow<OutputResolution> = settingsData
         .map { preferences ->
             preferences[OUTPUT_RESOLUTION_KEY]?.let { name ->
                 runCatching { OutputResolution.valueOf(name) }
@@ -34,6 +38,12 @@ class DataStoreSettingsRepository @Inject constructor(
                     .getOrNull()
             } ?: OutputResolution.STANDARD
         }
+
+    override val autoCheckUpdates: Flow<Boolean> = settingsData
+        .map { preferences -> preferences[AUTO_CHECK_UPDATES_KEY] ?: true }
+
+    override val lastUpdateCheckMillis: Flow<Long?> = settingsData
+        .map { preferences -> preferences[LAST_UPDATE_CHECK_MILLIS_KEY] }
 
     override suspend fun setOutputResolution(resolution: OutputResolution) {
         try {
@@ -45,7 +55,29 @@ class DataStoreSettingsRepository @Inject constructor(
         }
     }
 
+    override suspend fun setAutoCheckUpdates(enabled: Boolean) {
+        try {
+            dataStore.edit { preferences ->
+                preferences[AUTO_CHECK_UPDATES_KEY] = enabled
+            }
+        } catch (e: IOException) {
+            Timber.e(e, "Failed to persist auto-check updates: $enabled")
+        }
+    }
+
+    override suspend fun setLastUpdateCheckMillis(millis: Long) {
+        try {
+            dataStore.edit { preferences ->
+                preferences[LAST_UPDATE_CHECK_MILLIS_KEY] = millis
+            }
+        } catch (e: IOException) {
+            Timber.e(e, "Failed to persist last update check time")
+        }
+    }
+
     private companion object {
         val OUTPUT_RESOLUTION_KEY = stringPreferencesKey("output_resolution")
+        val AUTO_CHECK_UPDATES_KEY = booleanPreferencesKey("auto_check_updates")
+        val LAST_UPDATE_CHECK_MILLIS_KEY = longPreferencesKey("last_update_check_millis")
     }
 }
