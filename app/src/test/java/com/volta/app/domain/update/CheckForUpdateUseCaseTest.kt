@@ -212,6 +212,16 @@ class CheckForUpdateUseCaseTest {
     }
 
     @Test
+    fun `propagates cancellation thrown by the fetch`() = runTest {
+        val useCase = useCase(TestFixture())
+        coEvery { updateRepository.fetchLatestManifest() } throws CancellationException("cancelled")
+
+        val thrown = runCatching { useCase(UpdateCheckMode.LAUNCH) }.exceptionOrNull()
+
+        assertThat(thrown).isInstanceOf(CancellationException::class.java)
+    }
+
+    @Test
     fun `still reports the update when storing the check time fails`() = runTest {
         val newer = manifest()
         val useCase = useCase(TestFixture(fetchResult = Result.success(newer)))
