@@ -24,14 +24,28 @@ private class FakeSettingsRepository(initial: OutputResolution = OutputResolutio
     var lastPersisted: OutputResolution? = null
         private set
 
+    override val autoCheckUpdates = MutableStateFlow(true)
+    override val lastUpdateCheckMillis = MutableStateFlow<Long?>(null)
+
     override suspend fun setOutputResolution(resolution: OutputResolution) {
         lastPersisted = resolution
         state.value = resolution
     }
+
+    override suspend fun setAutoCheckUpdates(enabled: Boolean) {
+        autoCheckUpdates.value = enabled
+    }
+
+    override suspend fun setLastUpdateCheckMillis(millis: Long) {
+        lastUpdateCheckMillis.value = millis
+    }
 }
 
-private class FakeAppVersionDataSource(override val versionName: String = "9.9.9") :
-    AppVersionDataSource
+private class FakeAppVersionDataSource(
+    override val versionName: String = "9.9.9",
+    override val versionCode: Int = 1,
+    override val isDebugBuild: Boolean = false
+) : AppVersionDataSource
 
 class SettingsViewModelTest {
 

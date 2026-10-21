@@ -1,5 +1,6 @@
 package com.volta.app.di
 
+import com.volta.app.domain.time.Clock
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -36,6 +37,9 @@ object AppModule {
     @Provides
     @DefaultDispatcher
     fun provideDefaultDispatcher(): CoroutineDispatcher = Dispatchers.Default
+
+    @Provides
+    fun provideClock(): Clock = Clock { System.currentTimeMillis() }
 
     @Provides
     @Singleton
