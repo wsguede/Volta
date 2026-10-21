@@ -44,7 +44,8 @@ class CheckForUpdateUseCase(
 
     /**
      * A failed write only means the next launch checks again, so it must not hide a result that
-     * was already fetched.
+     * was already fetched. [SettingsRepository.setLastUpdateCheckMillis] already logs and drops
+     * its failures; this catch is a backup for implementations that break that contract.
      */
     @Suppress("TooGenericExceptionCaught")
     private suspend fun recordCheckTime() {
@@ -53,7 +54,7 @@ class CheckForUpdateUseCase(
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            // Nothing to log with in domain/; the repository logs its own write failures.
+            // Nothing to log with in domain/; see the KDoc above.
         }
     }
 
