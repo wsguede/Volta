@@ -4,6 +4,7 @@ import com.volta.app.domain.settings.AppVersionDataSource
 import com.volta.app.domain.settings.SettingsRepository
 import com.volta.app.domain.time.Clock
 import com.volta.app.domain.update.CheckForUpdateResult.SkipReason
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -27,16 +28,34 @@ class CheckForUpdateUseCase(
 
             updateRepository.fetchLatestManifest().fold(
                 onSuccess = { manifest ->
-                    settingsRepository.setLastUpdateCheckMillis(clock.nowMillis())
+                    recordCheckTime()
                     if (isInstallable(manifest)) {
                         CheckForUpdateResult.UpdateAvailable(manifest)
                     } else {
                         CheckForUpdateResult.UpToDate
                     }
                 },
-                onFailure = { CheckForUpdateResult.Failed(it) }
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    CheckForUpdateResult.Failed(error)
+                }
             )
         }
+
+    /**
+     * A failed write only means the next launch checks again, so it must not hide a result that
+     * was already fetched.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun recordCheckTime() {
+        try {
+            settingsRepository.setLastUpdateCheckMillis(clock.nowMillis())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Nothing to log with in domain/; the repository logs its own write failures.
+        }
+    }
 
     private suspend fun skipReason(mode: UpdateCheckMode): SkipReason? = when {
         appVersionDataSource.isDebugBuild -> SkipReason.DEBUG_BUILD

@@ -10,11 +10,12 @@ import io.mockk.every
 import io.mockk.mockk
 import java.io.IOException
 import kotlin.coroutines.ContinuationInterceptor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -23,23 +24,23 @@ class CheckForUpdateUseCaseTest {
     private val updateRepository = mockk<UpdateRepository>()
     private val settingsRepository = mockk<SettingsRepository>(relaxUnitFun = true)
 
-    private fun TestFixture.useCase() = CheckForUpdateUseCase(
+    private fun TestScope.useCase(fixture: TestFixture) = CheckForUpdateUseCase(
         updateRepository = updateRepository,
         settingsRepository = settingsRepository,
         appVersionDataSource = object : AppVersionDataSource {
             override val versionName = "2026.10.1"
-            override val versionCode = installedVersionCode
-            override val isDebugBuild = debugBuild
+            override val versionCode = fixture.installedVersionCode
+            override val isDebugBuild = fixture.debugBuild
         },
         deviceSdkDataSource = object : DeviceSdkDataSource {
-            override val sdkInt = deviceSdk
+            override val sdkInt = fixture.deviceSdk
         },
-        clock = { now },
-        dispatcher = dispatcher
+        clock = { fixture.now },
+        dispatcher = fixture.dispatcher ?: StandardTestDispatcher(testScheduler)
     ).also {
-        every { settingsRepository.autoCheckUpdates } returns flowOf(autoCheck)
-        every { settingsRepository.lastUpdateCheckMillis } returns flowOf(lastCheck)
-        coEvery { updateRepository.fetchLatestManifest() } returns fetchResult
+        every { settingsRepository.autoCheckUpdates } returns flowOf(fixture.autoCheck)
+        every { settingsRepository.lastUpdateCheckMillis } returns flowOf(fixture.lastCheck)
+        coEvery { updateRepository.fetchLatestManifest() } returns fixture.fetchResult
     }
 
     private class TestFixture(
@@ -50,13 +51,14 @@ class CheckForUpdateUseCaseTest {
         val lastCheck: Long? = null,
         val now: Long = NOW,
         val fetchResult: Result<UpdateManifest> = Result.success(manifest()),
-        val dispatcher: CoroutineDispatcher = Dispatchers.Unconfined
+        /** Null runs the check on a dispatcher backed by the test's own scheduler. */
+        val dispatcher: CoroutineDispatcher? = null
     )
 
-    private suspend fun check(
+    private suspend fun TestScope.check(
         fixture: TestFixture = TestFixture(),
         mode: UpdateCheckMode = UpdateCheckMode.LAUNCH
-    ): CheckForUpdateResult = fixture.useCase()(mode)
+    ): CheckForUpdateResult = useCase(fixture)(mode)
 
     // --- Debug guard ---
 
@@ -101,6 +103,13 @@ class CheckForUpdateUseCaseTest {
 
         assertThat(result).isEqualTo(CheckForUpdateResult.Skipped(SkipReason.CHECKED_RECENTLY))
         coVerify(exactly = 0) { updateRepository.fetchLatestManifest() }
+    }
+
+    @Test
+    fun `launch check is skipped when the last check was just now`() = runTest {
+        val result = check(TestFixture(lastCheck = NOW))
+
+        assertThat(result).isEqualTo(CheckForUpdateResult.Skipped(SkipReason.CHECKED_RECENTLY))
     }
 
     @Test
@@ -192,6 +201,40 @@ class CheckForUpdateUseCaseTest {
     }
 
     @Test
+    fun `propagates cancellation from the fetch instead of reporting Failed`() = runTest {
+        val cancellation = CancellationException("check cancelled")
+
+        val thrown = runCatching {
+            check(TestFixture(fetchResult = Result.failure(cancellation)))
+        }.exceptionOrNull()
+
+        assertThat(thrown).isInstanceOf(CancellationException::class.java)
+    }
+
+    @Test
+    fun `still reports the update when storing the check time fails`() = runTest {
+        val newer = manifest()
+        val useCase = useCase(TestFixture(fetchResult = Result.success(newer)))
+        coEvery { settingsRepository.setLastUpdateCheckMillis(any()) } throws
+            IllegalStateException("store failed")
+
+        val result = useCase(UpdateCheckMode.LAUNCH)
+
+        assertThat(result).isEqualTo(CheckForUpdateResult.UpdateAvailable(newer))
+    }
+
+    @Test
+    fun `propagates cancellation while storing the check time`() = runTest {
+        val useCase = useCase(TestFixture())
+        coEvery { settingsRepository.setLastUpdateCheckMillis(any()) } throws
+            CancellationException("check cancelled")
+
+        val thrown = runCatching { useCase(UpdateCheckMode.LAUNCH) }.exceptionOrNull()
+
+        assertThat(thrown).isInstanceOf(CancellationException::class.java)
+    }
+
+    @Test
     fun `stores the check time after a successful fetch`() = runTest {
         check(TestFixture(fetchResult = Result.success(manifest(versionCode = 1))))
 
@@ -224,7 +267,7 @@ class CheckForUpdateUseCaseTest {
     @Test
     fun `fetches on the injected dispatcher`() = runTest {
         val ioDispatcher = StandardTestDispatcher(testScheduler)
-        val useCase = TestFixture(dispatcher = ioDispatcher).useCase()
+        val useCase = useCase(TestFixture(dispatcher = ioDispatcher))
         var fetchDispatcher: ContinuationInterceptor? = null
         coEvery { updateRepository.fetchLatestManifest() } coAnswers {
             fetchDispatcher = currentCoroutineContext()[ContinuationInterceptor]
