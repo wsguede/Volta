@@ -42,7 +42,8 @@ Build a self-updater with no new dependencies:
   `versionName` would compare as newer than older release builds.
   Any successful check, manual ones included, restarts the 24 h window. A last-check timestamp in
   the future (the wall clock moved backwards) counts as due, so a bad timestamp can't block checks
-  for days.
+  for days. If saving the timestamp fails, the window does not restart and the next launch checks
+  again.
 - **Surfacing.** A badge on the Settings entry point and an "Update to X" row in Settings with the
   release notes and an Install button. Never a dialog or banner — the update flow must not
   interrupt capture, stitching, or export.
