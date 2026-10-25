@@ -228,6 +228,23 @@ class GitHubUpdateRepositoryTest {
 
         assertThat(events.last()).isInstanceOf(DownloadProgress.Failed::class.java)
         assertThat(updatesDir.listFiles().orEmpty()).isEmpty()
+        // A bad response is not an offline failure, so it is logged loudly.
+        assertThat(logs.priorities).containsExactly(Log.WARN)
+    }
+
+    @Test
+    fun `an announced length above the size cap fails before writing anything`() = runTest {
+        httpClient.respond(
+            APK_URL,
+            ByteArrayInputStream(apkBytes),
+            contentLength = GitHubUpdateRepository.MAX_APK_BYTES + 1
+        )
+
+        val events = repository().download(manifest()).toList()
+
+        assertThat(events.single()).isInstanceOf(DownloadProgress.Failed::class.java)
+        assertThat(updatesDir.listFiles().orEmpty()).isEmpty()
+        assertThat(logs.priorities).containsExactly(Log.WARN)
     }
 
     @Test

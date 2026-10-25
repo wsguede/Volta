@@ -92,7 +92,9 @@ class GitHubUpdateRepository @Inject constructor(
 
         // Emptied first, so a leftover file is never mistaken for the new APK.
         updatesDir.deleteRecursively()
-        if (!updatesDir.mkdirs()) throw IOException("Could not create $updatesDir")
+        // check() rather than IOException: local storage problems are logged at warn, not as
+        // offline.
+        check(updatesDir.mkdirs()) { "Could not create $updatesDir" }
         val apk = File(updatesDir, "volta-${manifest.versionCode}.apk")
 
         var verified = false
@@ -110,15 +112,19 @@ class GitHubUpdateRepository @Inject constructor(
     }
 
     /**
-     * Copies [input] to [target], emitting progress every [PROGRESS_STEP_BYTES]. Fails once more
-     * bytes arrive than the server announced, or than [MAX_APK_BYTES] when it announced none, so
-     * a bad response can't fill the disk.
+     * Copies [input] to [target], emitting progress every [PROGRESS_STEP_BYTES]. Never writes more
+     * than [MAX_APK_BYTES] or than the server announced, so a bad response can't fill the disk.
+     * Size failures use check(): they mean a broken server or release, not offline, so they are
+     * logged at warn.
      */
     private suspend fun FlowCollector<DownloadProgress>.copyWithProgress(
         input: InputStream,
         target: File,
         totalBytes: Long?
     ) {
+        check(totalBytes == null || totalBytes <= MAX_APK_BYTES) {
+            "Update download announces $totalBytes bytes, above the $MAX_APK_BYTES byte limit"
+        }
         val maxBytes = totalBytes ?: MAX_APK_BYTES
         var bytesDownloaded = 0L
         var lastReported = 0L
@@ -132,11 +138,7 @@ class GitHubUpdateRepository @Inject constructor(
                 val read = input.read(buffer)
                 if (read < 0) break
                 bytesDownloaded += read
-                if (bytesDownloaded >
-                    maxBytes
-                ) {
-                    throw IOException("Update download exceeds $maxBytes bytes")
-                }
+                check(bytesDownloaded <= maxBytes) { "Update download exceeds $maxBytes bytes" }
                 output.write(buffer, 0, read)
                 if (bytesDownloaded - lastReported >= PROGRESS_STEP_BYTES) {
                     lastReported = bytesDownloaded
@@ -160,11 +162,7 @@ class GitHubUpdateRepository @Inject constructor(
             val read = input.read(buffer)
             if (read < 0) break
             output.write(buffer, 0, read)
-            if (output.size() >
-                MAX_MANIFEST_BYTES
-            ) {
-                throw IOException("Update manifest is too large")
-            }
+            check(output.size() <= MAX_MANIFEST_BYTES) { "Update manifest is too large" }
         }
         return output.toString(Charsets.UTF_8.name())
     }
@@ -176,7 +174,7 @@ class GitHubUpdateRepository @Inject constructor(
         private const val UPDATES_DIR_NAME = "updates"
         const val PROGRESS_STEP_BYTES = 64 * 1024
 
-        /** Far above any real Volta APK; only applies when the server sends no length. */
-        private const val MAX_APK_BYTES = 512L * 1024 * 1024
+        /** Far above any real Volta APK. */
+        const val MAX_APK_BYTES = 512L * 1024 * 1024
     }
 }
