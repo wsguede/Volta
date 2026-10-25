@@ -40,9 +40,9 @@ Volta is a native Android app that guides you through capturing a full photosphe
 | Tool | Version |
 |---|---|
 | JDK | 17 |
-| Gradle | 9.6.1 (via included wrapper) |
-| Android SDK | API 35 (compile/target) |
-| Kotlin | 2.0.21 |
+| Gradle | Via included wrapper — see `gradle/wrapper/gradle-wrapper.properties` |
+| Android SDK | API 37 (`compileSdk`), API 35 (`targetSdk`) |
+| Kotlin | See `gradle/libs.versions.toml` |
 
 ---
 
