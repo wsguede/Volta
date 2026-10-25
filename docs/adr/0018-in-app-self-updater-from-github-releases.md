@@ -35,6 +35,9 @@ Build a self-updater with no new dependencies:
   `output-metadata.json` and `sha256sum`. The app fetches
   `https://github.com/wsguede/Volta/releases/latest/download/update.json` — a plain asset redirect,
   not the rate-limited API — and parses it with the framework's `org.json`.
+  The app accepts only `schemaVersion` 1 and ignores fields it does not recognize, so new fields
+  can be added without changing the version. Raise `schemaVersion` only for a breaking change,
+  knowing that every installed build that does not understand it stops seeing updates.
 - **When to check.** On app launch, at most once per 24 h (last-check timestamp in DataStore,
   ADR 0011), plus a manual "Check for updates" action in Settings. Auto-check is **on by default**
   with an opt-out toggle in Settings. The updater is **disabled in debug builds**: they are signed
@@ -48,10 +51,15 @@ Build a self-updater with no new dependencies:
   release notes and an Install button. Never a dialog or banner — the update flow must not
   interrupt capture, stitching, or export.
 - **Download.** `HttpURLConnection` on the injected IO dispatcher into `cacheDir/updates/`, only
-  after the user taps Install, with progress exposed as `StateFlow`.
+  after the user taps Install, with progress exposed as `StateFlow`. `apkUrl` must use `https`; the
+  host is not restricted, because GitHub redirects release downloads to another host. The file is
+  named after the manifest's `versionCode`, and `cacheDir/updates/` is emptied before each
+  download, so a leftover or concurrent file is never mistaken for the new APK.
 - **Verify.** SHA-256 of the file must match `update.json`, and
   `PackageManager.getPackageArchiveInfo` must report a `versionCode` greater than the installed
   one. Android's own signature check rejects any APK not signed with the release key.
+  Download and verification failures surface to the UI as one message with a Retry action; the
+  failure cause is logged but not shown.
 - **Install.** `PackageInstaller` session API with a `PendingIntent` status receiver; on
   `STATUS_PENDING_USER_ACTION` the confirmation intent is launched. On API 31+ the session requests
   `USER_ACTION_NOT_REQUIRED`: the first in-app update (Volta was installed by a browser/adb)
@@ -63,6 +71,8 @@ Build a self-updater with no new dependencies:
 Layering follows ADR 0001: `domain/update/` holds the version comparison, manifest model, and
 check policy (throttle, opt-out, debug guard) as pure Kotlin; `data/update/` holds the HTTP
 fetcher, downloader, and `PackageInstaller` wrapper; the Settings screen consumes the result.
+The fetch and download boundary (`UpdateRepository`) and the install boundary (`UpdateInstaller`)
+are separate domain interfaces, so each is implemented and bound on its own.
 
 ## Consequences
 
