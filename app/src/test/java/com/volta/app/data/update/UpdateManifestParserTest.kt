@@ -55,6 +55,43 @@ class UpdateManifestParserTest {
     }
 
     @Test
+    fun `fails when schemaVersion is a string`() {
+        val result = parser.parse(sample("manifest-string-schema.json"))
+
+        assertThat(result.isFailure).isTrue()
+    }
+
+    @Test
+    fun `fails when schemaVersion is fractional`() {
+        val json = sample(
+            "manifest-valid.json"
+        ).replace("\"schemaVersion\": 1,", "\"schemaVersion\": 1.9,")
+
+        assertThat(parser.parse(json).isFailure).isTrue()
+    }
+
+    @Test
+    fun `fails when a required field is null`() {
+        val result = parser.parse(sample("manifest-null-field.json"))
+
+        assertThat(result.isFailure).isTrue()
+    }
+
+    @Test
+    fun `fails when content follows the json object`() {
+        val result = parser.parse(sample("manifest-valid.json") + "{}")
+
+        assertThat(result.isFailure).isTrue()
+    }
+
+    @Test
+    fun `accepts trailing whitespace`() {
+        val result = parser.parse(sample("manifest-valid.json") + "\n\n")
+
+        assertThat(result.getOrThrow()).isEqualTo(VALID_MANIFEST)
+    }
+
+    @Test
     fun `fails when the document is not a json object`() {
         assertThat(parser.parse("[]").isFailure).isTrue()
         assertThat(parser.parse("").isFailure).isTrue()

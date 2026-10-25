@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "versionCode": 202610002,
+  "versionName": null,
+  "minSdk": 30,
+  "sha256": "abababababababababababababababababababababababababababababababab",
+  "apkUrl": "https://github.com/wsguede/Volta/releases/download/v2026.10.2/app-release.apk",
+  "notes": "Fixes stitching at the poles."
+}
