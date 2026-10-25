@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "versionCode": 202610002,
+  "versionName": "2026.10.2",
+  "minSdk": 30,
+  "sha256": "abababababababababababababababababababababababababababababababab",
+  "apkUrl": "https://github.com/wsguede/Volta/releases/download/v2026.10.2/app-release.apk",
+  "notes": "Fixes stitching at the poles.",
+  "releasedAt": "2026-10-25T00:00:00Z",
+  "channel": {
+    "name": "stable"
+  }
+}
