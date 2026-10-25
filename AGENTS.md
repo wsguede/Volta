@@ -204,6 +204,7 @@ Each screen package contains exactly one `*Screen.kt` (Composable), one `*ViewMo
 - Instrumentation tests are optional but welcome for critical camera/ARCore paths
 - Test files live in `src/test/` and `src/androidTest/` mirroring `main/` structure
 - Use Truth for assertions, MockK for mocking, Turbine for Flow testing
+- Use Robolectric only when a test needs real Android framework classes (`org.json`, `Context`); keep everything else as plain JVM tests ([ADR 0019](docs/adr/0019-use-robolectric-for-android-framework-unit-tests.md))
 - Always run `./gradlew testDebugUnitTest` before committing
 
 ---

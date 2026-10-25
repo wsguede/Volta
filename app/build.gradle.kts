@@ -132,6 +132,7 @@ dependencies {
     testImplementation(libs.truth)
     testImplementation(libs.turbine)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.compose.ui.test.junit4)
 }
