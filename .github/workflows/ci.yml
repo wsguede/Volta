@@ -87,6 +87,18 @@ jobs:
           path: app/build/reports/tests/testDebugUnitTest/
           retention-days: 7
 
+  release-scripts:
+    name: Release Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: shellcheck
+        run: shellcheck .github/scripts/*.sh
+
+      - name: Update manifest tests
+        run: .github/scripts/test-generate-update-manifest.sh
+
   build:
     name: Build Debug APK
     runs-on: ubuntu-latest

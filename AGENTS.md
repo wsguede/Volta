@@ -54,9 +54,9 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | Tool | Version | Notes |
 |---|---|---|
 | JDK | 17 | CI uses Temurin; local JDK version may differ |
-| Gradle | 9.6.1 | Via included wrapper (`./gradlew`) — always use the wrapper |
+| Gradle | See `gradle/wrapper/gradle-wrapper.properties` | Via included wrapper (`./gradlew`) — always use the wrapper |
 | Android SDK | API 37 (`compileSdk`), API 35 (`targetSdk`) | `compileSdk` and `targetSdk` are tracked separately |
-| Kotlin | 2.4.0 | Built into AGP 9+; no `org.jetbrains.kotlin.android` plugin needed, only the Compose compiler plugin. Pinned to 2.4.0 (not the latest 2.4.10) because CodeQL's Kotlin extractor doesn't yet support patch releases past 2.4.0 |
+| Kotlin | See `kotlin` in `gradle/libs.versions.toml` | Built into AGP 9+; no `org.jetbrains.kotlin.android` plugin needed, only the Compose compiler plugin. CodeQL's Kotlin extractor can lag new Kotlin releases, and CodeQL does not run on Dependabot PRs — after a Kotlin bump merges, check the `Analyze (java-kotlin)` run on `main` |
 | Min Android | API 30 | Android 11+ |
 
 Dependencies are managed via the Gradle version catalog at `gradle/libs.versions.toml`. Do not add dependency versions directly in `build.gradle.kts` — add them to the catalog.
@@ -103,12 +103,15 @@ app/
     │       │   ├── ar/               # ArSessionManager (ARCore session data source interface)
     │       │   ├── capture/          # Frame capture triggering, blur detection
     │       │   ├── coverage/         # Sphere coverage tracking
-    │       │   └── stitching/        # Stitching orchestration, OutputResolution
+    │       │   ├── stitching/        # Stitching orchestration, OutputResolution
+    │       │   ├── time/             # Clock (injected wall-clock time)
+    │       │   └── update/           # Update manifest model and check policy (ADR 0018)
     │       ├── data/
     │       │   ├── ar/               # ARCore camera integration (owns the camera exclusively —
     │       │   │                     #   see ADR 0013; supersedes the earlier CameraX approach)
     │       │   ├── gps/              # Location / GPS
-    │       │   └── export/           # MediaStore / file system
+    │       │   ├── export/           # MediaStore / file system
+    │       │   └── update/           # Update download and install (ADR 0018)
     │       ├── di/                   # Hilt modules
     │       ├── navigation/           # Nav graph
     │       └── VoltaApplication.kt
@@ -230,7 +233,7 @@ chore(ci): add ktlint check to CI pipeline
 docs(adr): add ADR for OpenCV stitching choice
 ```
 
-Valid scopes: `capture`, `coverage`, `stitching`, `camera`, `ar`, `gps`, `export`, `ui`, `di`, `ci`, `adr`, `infra`.
+Valid scopes: `capture`, `coverage`, `stitching`, `camera`, `ar`, `gps`, `export`, `ui`, `di`, `ci`, `adr`, `infra`, `update`.
 
 ---
 
