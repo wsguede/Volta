@@ -3,8 +3,9 @@ package com.volta.app.domain.update
 import kotlinx.coroutines.flow.Flow
 
 /**
- * The updater's only network and package-install boundary, implemented in `data/update/`.
- * Never call it from the capture, stitching, or export paths, which must stay offline.
+ * The updater's only network boundary, implemented in `data/update/`. Never call it from the
+ * capture, stitching, or export paths, which must stay offline. Installing is a separate
+ * boundary, [UpdateInstaller].
  */
 interface UpdateRepository {
     /**
@@ -21,8 +22,7 @@ interface UpdateRepository {
     /**
      * Downloads and verifies the APK for [manifest]. Errors are emitted as
      * [DownloadProgress.Failed], which ends the flow; the flow itself throws only on cancellation.
+     * A cancelled or failed download leaves no file behind.
      */
     fun download(manifest: UpdateManifest): Flow<DownloadProgress>
-
-    suspend fun install(apk: DownloadedApk): InstallResult
 }
