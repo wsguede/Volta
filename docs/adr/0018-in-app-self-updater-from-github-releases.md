@@ -55,9 +55,11 @@ Build a self-updater with no new dependencies:
   host is not restricted, because GitHub redirects release downloads to another host. The file is
   named after the manifest's `versionCode`, and `cacheDir/updates/` is emptied before each
   download, so a leftover or concurrent file is never mistaken for the new APK.
-- **Verify.** SHA-256 of the file must match `update.json`, and
-  `PackageManager.getPackageArchiveInfo` must report a `versionCode` greater than the installed
-  one. Android's own signature check rejects any APK not signed with the release key.
+- **Verify.** SHA-256 of the file must match `update.json`. `PackageManager.getPackageArchiveInfo`
+  must report the installed app's package name and the manifest's `versionCode`, and that
+  `versionCode` must be greater than the installed one. Android's own signature check rejects any
+  APK not signed with the release key. A download stops above 512 MiB, or above the length the
+  server announced, so a bad response can't fill the disk.
   Download and verification failures surface to the UI as one message with a Retry action; the
   failure cause is logged but not shown.
 - **Install.** `PackageInstaller` session API with a `PendingIntent` status receiver; on
@@ -82,6 +84,8 @@ are separate domain interfaces, so each is implemented and bound on its own.
 - Each check reveals the device's IP to GitHub, which is why the opt-out exists.
 - Release-pipeline coupling moves from tag format to `update.json`'s schema — changes to it must
   stay backward compatible with already-installed versions, or old builds stop seeing updates.
+  Each `update.json` must also describe the exact APK it ships with: a `versionCode` that differs
+  from the APK's fails verification, so that release can't be installed.
 - Silent installs depend on platform installer-of-record rules that tighten over Android releases
   (e.g., minimum `targetSdk` for the installer); they need verification on a physical device, and
   the prompted path must remain the fallback.
