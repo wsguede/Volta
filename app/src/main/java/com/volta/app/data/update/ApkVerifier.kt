@@ -1,21 +1,22 @@
 package com.volta.app.data.update
 
+import com.volta.app.domain.update.UpdateManifest
 import java.io.File
 import java.security.MessageDigest
 import javax.inject.Inject
 
 /**
  * Checks a downloaded APK before it is handed to the installer (ADR 0018): the SHA-256 must match
- * the manifest, and the APK must be the same package with a higher versionCode than the installed
- * app. Android's own signature check at install time rejects an APK not signed with the release
- * key.
+ * the manifest, and the APK must be the same package, with the manifest's versionCode, which must
+ * be higher than the installed app's. Android's own signature check at install time rejects an
+ * APK not signed with the release key.
  */
 class ApkVerifier @Inject constructor(private val inspector: ApkInspector) {
 
-    fun verify(apk: File, expectedSha256: String): Result<Unit> = runCatching {
+    fun verify(apk: File, manifest: UpdateManifest): Result<Unit> = runCatching {
         val actualSha256 = sha256Hex(apk)
-        check(actualSha256.equals(expectedSha256, ignoreCase = true)) {
-            "SHA-256 mismatch: expected $expectedSha256, got $actualSha256"
+        check(actualSha256.equals(manifest.sha256, ignoreCase = true)) {
+            "SHA-256 mismatch: expected ${manifest.sha256}, got $actualSha256"
         }
 
         val archive =
@@ -23,6 +24,11 @@ class ApkVerifier @Inject constructor(private val inspector: ApkInspector) {
         val installed = inspector.installedPackage
         check(archive.packageName == installed.packageName) {
             "APK package ${archive.packageName} does not match ${installed.packageName}"
+        }
+        // Catches a release whose manifest disagrees with its APK; the update offer is based on
+        // the manifest's versionCode.
+        check(archive.versionCode == manifest.versionCode.toLong()) {
+            "APK versionCode ${archive.versionCode} does not match manifest ${manifest.versionCode}"
         }
         check(archive.versionCode > installed.versionCode) {
             "APK versionCode ${archive.versionCode} is not higher than installed ${installed.versionCode}"

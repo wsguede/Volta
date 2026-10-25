@@ -1,5 +1,6 @@
 package com.volta.app.data.update
 
+import android.util.Log
 import com.google.common.truth.Truth.assertThat
 import com.volta.app.domain.update.DownloadProgress
 import com.volta.app.domain.update.DownloadedApk
@@ -10,16 +11,25 @@ import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.Executors
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import timber.log.Timber
 
 // Robolectric supplies a real Context.cacheDir and real org.json (ADR 0019).
 @RunWith(RobolectricTestRunner::class)
@@ -35,7 +45,8 @@ class GitHubUpdateRepositoryTest {
     private val apkBytes = ByteArray(200 * 1024) { (it % 251).toByte() }
 
     private fun repository(
-        archive: ApkPackageInfo? = ApkPackageInfo(PACKAGE_NAME, NEW_VERSION_CODE)
+        archive: ApkPackageInfo? = ApkPackageInfo(PACKAGE_NAME, NEW_VERSION_CODE),
+        dispatcher: CoroutineDispatcher = ioDispatcher
     ) = GitHubUpdateRepository(
         context = context,
         httpClient = httpClient,
@@ -46,11 +57,19 @@ class GitHubUpdateRepositoryTest {
                 archive = archive
             )
         ),
-        ioDispatcher = ioDispatcher
+        ioDispatcher = dispatcher
     )
+
+    private val logs = RecordingTree()
+
+    @Before
+    fun setUp() {
+        Timber.plant(logs)
+    }
 
     @After
     fun tearDown() {
+        Timber.uproot(logs)
         ioDispatcher.close()
         updatesDir.deleteRecursively()
     }
@@ -74,6 +93,7 @@ class GitHubUpdateRepositoryTest {
         val result = repository().fetchLatestManifest()
 
         assertThat(result.exceptionOrNull()).isInstanceOf(IOException::class.java)
+        assertThat(logs.priorities).containsExactly(Log.DEBUG)
     }
 
     @Test
@@ -191,13 +211,62 @@ class GitHubUpdateRepositoryTest {
     }
 
     @Test
-    fun `a failure to connect is emitted as Failed`() = runTest {
+    fun `a failure to connect is emitted as Failed and logged quietly`() = runTest {
         httpClient.fail(APK_URL, IOException("offline"))
 
         val events = repository().download(manifest()).toList()
 
         assertThat(events.single()).isInstanceOf(DownloadProgress.Failed::class.java)
+        assertThat(logs.priorities).containsExactly(Log.DEBUG)
     }
+
+    @Test
+    fun `a body longer than the reported length fails and deletes the file`() = runTest {
+        httpClient.respond(APK_URL, ByteArrayInputStream(apkBytes), contentLength = 100 * 1024L)
+
+        val events = repository().download(manifest()).toList()
+
+        assertThat(events.last()).isInstanceOf(DownloadProgress.Failed::class.java)
+        assertThat(updatesDir.listFiles().orEmpty()).isEmpty()
+    }
+
+    @Test
+    fun `a second download waits for the first instead of replacing its file`() = runTest {
+        httpClient.respond(APK_URL, apkBytes)
+        // The test scheduler controls both downloads, so the interleaving below is exact.
+        val repository = repository(dispatcher = StandardTestDispatcher(testScheduler))
+        val step = GitHubUpdateRepository.PROGRESS_STEP_BYTES
+        val lastStep = (apkBytes.size - apkBytes.size % step).toLong()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val releaseSecond = CompletableDeferred<Unit>()
+
+        // Paused here, the first download has written its whole file but not verified it yet.
+        val first = async {
+            repository.download(manifest()).pauseAt(releaseFirst) { it == lastStep }.toList().last()
+        }
+        runCurrent()
+        // Paused here, the second download would leave a partial file at the same path.
+        val second = async {
+            repository.download(manifest()).pauseAt(releaseSecond) { it > 0 }.toList().last()
+        }
+        runCurrent()
+        releaseFirst.complete(Unit)
+        runCurrent()
+        releaseSecond.complete(Unit)
+
+        val expected = DownloadProgress.Completed(
+            DownloadedApk(File(updatesDir, "volta-$NEW_VERSION_CODE.apk").absolutePath)
+        )
+        assertThat(first.await()).isEqualTo(expected)
+        assertThat(second.await()).isEqualTo(expected)
+        assertThat(File(expected.apk.path).readBytes()).isEqualTo(apkBytes)
+    }
+
+    /** Suspends collection at matching progress events until [gate] completes. */
+    private fun Flow<DownloadProgress>.pauseAt(
+        gate: CompletableDeferred<Unit>,
+        bytes: (Long) -> Boolean
+    ) = onEach { if (it is DownloadProgress.InProgress && bytes(it.bytesDownloaded)) gate.await() }
 
     @Test
     fun `refuses a non-https apkUrl without connecting`() = runTest {
@@ -247,8 +316,9 @@ class GitHubUpdateRepositoryTest {
         private val responses = mutableMapOf<String, () -> UpdateHttpResponse>()
         val requestThreads = mutableListOf<String>()
 
-        fun respond(url: String, body: ByteArray) =
-            respond(url, ByteArrayInputStream(body), body.size.toLong())
+        fun respond(url: String, body: ByteArray) {
+            responses[url] = { UpdateHttpResponse(ByteArrayInputStream(body), body.size.toLong()) }
+        }
 
         fun respond(url: String, body: InputStream, contentLength: Long?) {
             responses[url] = { UpdateHttpResponse(body, contentLength) }
@@ -262,6 +332,14 @@ class GitHubUpdateRepositoryTest {
             // Coroutine debug mode appends " @coroutine#N" to the thread name.
             requestThreads += Thread.currentThread().name.substringBefore(" @")
             return checkNotNull(responses[url]) { "Unexpected request to $url" }()
+        }
+    }
+
+    private class RecordingTree : Timber.Tree() {
+        val priorities = mutableListOf<Int>()
+
+        override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
+            priorities += priority
         }
     }
 

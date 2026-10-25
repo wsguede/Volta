@@ -22,7 +22,10 @@ interface UpdateRepository {
     /**
      * Downloads and verifies the APK for [manifest]. Errors are emitted as
      * [DownloadProgress.Failed], which ends the flow; the flow itself throws only on cancellation.
-     * A cancelled or failed download leaves no file behind.
+     * A cancelled or failed download leaves no partial or unverified file behind; a cancelled
+     * download stops after the current blocking read, so the delete can lag by up to the
+     * connection's read timeout. A verified APK stays until the next download or until the
+     * installer cleans it up.
      */
     fun download(manifest: UpdateManifest): Flow<DownloadProgress>
 }
