@@ -76,6 +76,20 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
+      # Keyed on the Robolectric version only, so unrelated catalog bumps keep the cache.
+      - name: Read Robolectric version
+        id: robolectric
+        run: echo "version=$(sed -n 's/^robolectric = "\(.*\)"$/\1/p' gradle/libs.versions.toml)" >> "$GITHUB_OUTPUT"
+
+      # Robolectric downloads its Android framework jar into ~/.m2, outside the Gradle cache
+      # (ADR 0019).
+      - name: Cache Robolectric framework jars
+        uses: actions/cache@v6
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ runner.os }}-${{ steps.robolectric.outputs.version }}-${{ hashFiles('app/src/test/resources/robolectric.properties') }}
+          restore-keys: robolectric-${{ runner.os }}-
+
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest
 
