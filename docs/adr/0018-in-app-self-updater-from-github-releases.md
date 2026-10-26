@@ -38,6 +38,10 @@ Build a self-updater with no new dependencies:
   The app accepts only `schemaVersion` 1 and ignores fields it does not recognize, so new fields
   can be added without changing the version. Raise `schemaVersion` only for a breaking change,
   knowing that every installed build that does not understand it stops seeing updates.
+  The fields the app knows are required and strictly typed: `schemaVersion`, `versionCode`, and
+  `minSdk` are integers, the rest are strings, and `sha256` is 64 hex characters. The body must be
+  a single JSON object of at most 64 KiB. An additive change may add fields, but must not remove
+  a known field or change its type; doing so silently stops updates for every installed build.
 - **When to check.** On app launch, at most once per 24 h (last-check timestamp in DataStore,
   ADR 0011), plus a manual "Check for updates" action in Settings. Auto-check is **on by default**
   with an opt-out toggle in Settings. The updater is **disabled in debug builds**: they are signed
@@ -51,10 +55,13 @@ Build a self-updater with no new dependencies:
   release notes and an Install button. Never a dialog or banner — the update flow must not
   interrupt capture, stitching, or export.
 - **Download.** `HttpURLConnection` on the injected IO dispatcher into `cacheDir/updates/`, only
-  after the user taps Install, with progress exposed as `StateFlow`. `apkUrl` must use `https`; the
-  host is not restricted, because GitHub redirects release downloads to another host. The file is
-  named after the manifest's `versionCode`, and `cacheDir/updates/` is emptied before each
-  download, so a leftover or concurrent file is never mistaken for the new APK.
+  after the user taps Install. The repository returns progress as a cold `Flow`; the Settings
+  ViewModel exposes it to the UI as `StateFlow`. `apkUrl` must use `https`, and so must the final
+  URL after redirects; the host is not restricted, because GitHub redirects release downloads to
+  another host. The file is named after the manifest's `versionCode`. Downloads run one at a
+  time, and `cacheDir/updates/` is emptied before each one, so a leftover file is never mistaken
+  for the new APK. The next download replaces the verified file, so the caller installs it before
+  starting another download.
 - **Verify.** SHA-256 of the file must match `update.json`. `PackageManager.getPackageArchiveInfo`
   must report the installed app's package name and the manifest's `versionCode`, and that
   `versionCode` must be greater than the installed one. Android's own signature check rejects any
