@@ -12,6 +12,8 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import javax.inject.Inject
+import javax.inject.Singleton
+import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.Channel
@@ -32,7 +34,17 @@ import timber.log.Timber
  * Fetches `update.json` from the latest GitHub release and downloads the APK it points to
  * (ADR 0018). This is the app's only network caller; never call it from capture, stitching, or
  * export.
+ *
+ * Reads block on `HttpURLConnection` and can't be interrupted, so a cancelled download stops after
+ * the current read returns: deleting its partial file can lag by up to the connection's read
+ * timeout.
+ *
+ * Failures are logged at debug only when the device looks offline (a plain `IOException`). TLS
+ * failures, HTTP error statuses, bad manifests, and size or storage problems are logged at warn.
  */
+// Scoped on the class, not only in UpdateModule: one download at a time relies on every caller
+// sharing one downloadMutex.
+@Singleton
 class GitHubUpdateRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val httpClient: UpdateHttpClient,
@@ -51,12 +63,8 @@ class GitHubUpdateRepository @Inject constructor(
             parser.parse(json).onFailure { Timber.w(it, "Update manifest is invalid") }
         } catch (e: CancellationException) {
             throw e
-        } catch (e: IOException) {
-            // Offline is the common case; launch checks fail quietly (ADR 0018).
-            Timber.d(e, "Update manifest fetch failed")
-            Result.failure(e)
         } catch (e: Exception) {
-            Timber.w(e, "Update manifest fetch failed")
+            logFailure(e, "Update manifest fetch failed")
             Result.failure(e)
         }
     }
@@ -72,12 +80,7 @@ class GitHubUpdateRepository @Inject constructor(
             emit(DownloadProgress.Completed(DownloadedApk(apk.absolutePath)))
         }
     }.catch { error ->
-        if (error is IOException) {
-            // Usually offline or a dropped connection; the UI shows its own retryable message.
-            Timber.d(error, "Update download failed")
-        } else {
-            Timber.w(error, "Update download failed")
-        }
+        logFailure(error, "Update download failed")
         emit(DownloadProgress.Failed(error))
     }
         // Rendezvous: the download waits for the collector at each progress step, so a collector
@@ -91,7 +94,7 @@ class GitHubUpdateRepository @Inject constructor(
         require(UpdateManifestParser.isHttpsUrl(manifest.apkUrl)) { "apkUrl must use https" }
 
         // Emptied first, so a leftover file is never mistaken for the new APK.
-        updatesDir.deleteRecursively()
+        if (!updatesDir.deleteRecursively()) Timber.w("Failed to empty %s", updatesDir)
         // check() rather than IOException: local storage problems are logged at warn, not as
         // offline.
         check(updatesDir.mkdirs()) { "Could not create $updatesDir" }
@@ -103,6 +106,9 @@ class GitHubUpdateRepository @Inject constructor(
                 copyWithProgress(response.body, apk, response.contentLength)
             }
             verifier.verify(apk, manifest).getOrThrow()
+            // Verification doesn't suspend, so check here: a download cancelled while verifying
+            // must not keep its file.
+            currentCoroutineContext().ensureActive()
             verified = true
         } finally {
             // Covers failures and cancellation: no partial or unverified file is left behind.
@@ -148,6 +154,16 @@ class GitHubUpdateRepository @Inject constructor(
         }
         val hasUnreportedBytes = lastReported != bytesDownloaded
         if (hasUnreportedBytes) emit(DownloadProgress.InProgress(bytesDownloaded, totalBytes))
+    }
+
+    /**
+     * Offline is the common failure and launch checks must fail quietly (ADR 0018). Anything
+     * else, including a TLS failure that may mean the connection is being intercepted, is logged
+     * at warn. The UI shows the same retryable message either way.
+     */
+    private fun logFailure(error: Throwable, message: String) {
+        val looksOffline = error is IOException && error !is SSLException
+        if (looksOffline) Timber.d(error, message) else Timber.w(error, message)
     }
 
     private fun deleteQuietly(file: File) {

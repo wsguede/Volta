@@ -22,8 +22,9 @@ class UpdateHttpResponse(
 /** Seam over `HttpURLConnection`, so the repository can be tested without a network. */
 interface UpdateHttpClient {
     /**
-     * Sends a blocking GET to [url], following redirects. Throws `IOException` on network errors,
-     * timeouts, and any status other than 200. Call it on the IO dispatcher.
+     * Sends a blocking GET to [url], following redirects. Throws `IOException` on network errors
+     * and timeouts. Throws `IllegalStateException` for any status other than 200, or when a
+     * redirect leaves https. Call it on the IO dispatcher.
      */
     fun open(url: String): UpdateHttpResponse
 }

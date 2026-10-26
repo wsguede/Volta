@@ -10,16 +10,21 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.Executors
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -46,7 +51,8 @@ class GitHubUpdateRepositoryTest {
 
     private fun repository(
         archive: ApkPackageInfo? = ApkPackageInfo(PACKAGE_NAME, NEW_VERSION_CODE),
-        dispatcher: CoroutineDispatcher = ioDispatcher
+        dispatcher: CoroutineDispatcher = ioDispatcher,
+        onInspect: () -> Unit = {}
     ) = GitHubUpdateRepository(
         context = context,
         httpClient = httpClient,
@@ -54,7 +60,8 @@ class GitHubUpdateRepositoryTest {
         verifier = ApkVerifier(
             FakeApkInspector(
                 installedPackage = ApkPackageInfo(PACKAGE_NAME, INSTALLED_VERSION_CODE),
-                archive = archive
+                archive = archive,
+                onInspect = onInspect
             )
         ),
         ioDispatcher = dispatcher
@@ -116,6 +123,32 @@ class GitHubUpdateRepositoryTest {
         val result = repository().fetchLatestManifest()
 
         assertThat(result.isFailure).isTrue()
+        // A broken response is not an offline failure, so it is logged loudly.
+        assertThat(logs.priorities).containsExactly(Log.WARN)
+    }
+
+    @Test
+    fun `fetch logs an HTTP error status loudly`() = runTest {
+        // The real client reports a non-200 status this way (see UrlConnectionUpdateHttpClient).
+        httpClient.fail(GitHubUpdateRepository.MANIFEST_URL, IllegalStateException("HTTP 404"))
+
+        val result = repository().fetchLatestManifest()
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(logs.priorities).containsExactly(Log.WARN)
+    }
+
+    @Test
+    fun `fetch logs a TLS failure loudly, though it is an IOException`() = runTest {
+        httpClient.fail(
+            GitHubUpdateRepository.MANIFEST_URL,
+            SSLHandshakeException("bad certificate")
+        )
+
+        val result = repository().fetchLatestManifest()
+
+        assertThat(result.exceptionOrNull()).isInstanceOf(SSLHandshakeException::class.java)
+        assertThat(logs.priorities).containsExactly(Log.WARN)
     }
 
     @Test
@@ -218,6 +251,39 @@ class GitHubUpdateRepositoryTest {
 
         assertThat(events.single()).isInstanceOf(DownloadProgress.Failed::class.java)
         assertThat(logs.priorities).containsExactly(Log.DEBUG)
+    }
+
+    @Test
+    fun `a TLS failure during download is logged loudly`() = runTest {
+        httpClient.fail(APK_URL, SSLPeerUnverifiedException("unverified peer"))
+
+        val events = repository().download(manifest()).toList()
+
+        assertThat(events.single()).isInstanceOf(DownloadProgress.Failed::class.java)
+        assertThat(logs.priorities).containsExactly(Log.WARN)
+    }
+
+    @Test
+    fun `a collector that stops at Completed keeps the verified file`() = runTest {
+        httpClient.respond(APK_URL, apkBytes)
+
+        val completed = repository().download(manifest())
+            .first { it is DownloadProgress.Completed } as DownloadProgress.Completed
+
+        assertThat(File(completed.apk.path).readBytes()).isEqualTo(apkBytes)
+    }
+
+    @Test
+    fun `cancellation during verification deletes the file`() = runTest {
+        httpClient.respond(APK_URL, apkBytes)
+        lateinit var download: Job
+        // The inspector runs inside verification; cancelling there exercises that window.
+        val repository = repository(onInspect = { download.cancel() })
+
+        download = launch { repository.download(manifest()).collect() }
+        download.join()
+
+        assertThat(updatesDir.listFiles().orEmpty()).isEmpty()
     }
 
     @Test

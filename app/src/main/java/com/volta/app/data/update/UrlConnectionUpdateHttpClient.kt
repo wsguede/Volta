@@ -1,13 +1,13 @@
 package com.volta.app.data.update
 
-import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import javax.inject.Inject
 
 /**
- * `HttpURLConnection` follows redirects within the same protocol only, so an https request is
- * never redirected to plain http.
+ * `HttpURLConnection` follows redirects within the same protocol only, so it should never move an
+ * https request to plain http. The final URL is checked anyway, since this is the app's only
+ * network client.
  */
 class UrlConnectionUpdateHttpClient internal constructor(
     private val openConnection: (String) -> HttpURLConnection
@@ -24,7 +24,10 @@ class UrlConnectionUpdateHttpClient internal constructor(
             connection.connectTimeout = TIMEOUT_MILLIS
             connection.readTimeout = TIMEOUT_MILLIS
             val status = connection.responseCode
-            if (status != HttpURLConnection.HTTP_OK) throw IOException("HTTP $status for $url")
+            // check(), not IOException: callers treat IOException as offline, and a 404 or 403
+            // is a real failure.
+            check(status == HttpURLConnection.HTTP_OK) { "HTTP $status for $url" }
+            check(connection.url.protocol == "https") { "$url was redirected to ${connection.url}" }
             val response = UpdateHttpResponse(
                 body = connection.inputStream,
                 contentLength = connection.contentLengthLong.takeIf { it >= 0 },
