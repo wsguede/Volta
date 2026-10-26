@@ -157,6 +157,8 @@ Each screen package contains exactly one `*Screen.kt` (Composable), one `*ViewMo
 | Navigation | Navigation Compose | [0008](docs/adr/0008-use-navigation-compose.md) |
 | Location | Play Services Location | [0009](docs/adr/0009-use-play-services-location.md) |
 | Settings persistence | DataStore Preferences | [0011](docs/adr/0011-use-datastore-preferences-for-settings.md) |
+| In-app updates | `HttpURLConnection` + `org.json` (framework) | [0018](docs/adr/0018-in-app-self-updater-from-github-releases.md) |
+| Framework unit tests | Robolectric (test only) | [0019](docs/adr/0019-use-robolectric-for-android-framework-unit-tests.md) |
 | Formatting | ktlint | — |
 | Static analysis | Detekt | — |
 | CI | GitHub Actions | — |
@@ -323,6 +325,7 @@ Persona definitions live in `.agents/agents/`. Use these when you need a special
 ## Key Constraints
 
 - All processing (stitching, frame analysis) must work fully offline — no network calls in capture or export
+- The updater (`data/update/`) is the only network caller (ADR 0018)
 - GPS coordinates are optional — warn but never block if location is unavailable
 - Session-focused: no persistent storage of photospheres — once exported, the app retains nothing
 - Output format: equirectangular JPEG with `GPano` XMP metadata
