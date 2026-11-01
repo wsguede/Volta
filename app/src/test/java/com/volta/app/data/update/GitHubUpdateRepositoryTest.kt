@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -266,8 +267,12 @@ class GitHubUpdateRepositoryTest {
     @Test
     fun `a collector that stops at Completed keeps the verified file`() = runTest {
         httpClient.respond(APK_URL, apkBytes)
+        val repository = repository(dispatcher = StandardTestDispatcher(testScheduler))
 
-        val completed = repository().download(manifest())
+        // Yielding on progress leaves the producer suspended sending Completed. Not yielding on
+        // Completed cancels it before it resumes: a cancelled send can deliver and still throw.
+        val completed = repository.download(manifest())
+            .onEach { if (it !is DownloadProgress.Completed) yield() }
             .first { it is DownloadProgress.Completed } as DownloadProgress.Completed
 
         assertThat(File(completed.apk.path).readBytes()).isEqualTo(apkBytes)
