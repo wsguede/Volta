@@ -9,6 +9,8 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.Executors
 import javax.net.ssl.SSLHandshakeException
 import javax.net.ssl.SSLPeerUnverifiedException
@@ -30,6 +32,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import org.junit.After
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -67,6 +70,8 @@ class GitHubUpdateRepositoryTest {
         ),
         ioDispatcher = dispatcher
     )
+
+    private fun apkFile() = File(updatesDir, "volta-${manifest().versionCode}.apk")
 
     private val logs = RecordingTree()
 
@@ -279,6 +284,34 @@ class GitHubUpdateRepositoryTest {
     }
 
     @Test
+    fun `failing to create the apk file logs at warn`() = runTest {
+        httpClient.respond(APK_URL, apkBytes)
+        // A directory at the APK path makes opening the file for writing fail.
+        httpClient.onOpen = { apkFile().mkdir() }
+
+        val events = repository().download(manifest()).toList()
+
+        assertThat(events.last()).isInstanceOf(DownloadProgress.Failed::class.java)
+        assertThat(logs.priorities).containsExactly(Log.WARN)
+        assertThat(updatesDir.listFiles().orEmpty()).isEmpty()
+    }
+
+    @Test
+    fun `a full disk logs at warn`() = runTest {
+        val fullDevice = Path.of("/dev/full")
+        assumeTrue(Files.exists(fullDevice))
+        httpClient.respond(APK_URL, apkBytes)
+        // Writing through this link fails the way a full disk does.
+        httpClient.onOpen = { Files.createSymbolicLink(apkFile().toPath(), fullDevice) }
+
+        val events = repository().download(manifest()).toList()
+
+        assertThat(events.last()).isInstanceOf(DownloadProgress.Failed::class.java)
+        assertThat(logs.priorities).containsExactly(Log.WARN)
+        assertThat(updatesDir.listFiles().orEmpty()).isEmpty()
+    }
+
+    @Test
     fun `cancellation during verification deletes the file`() = runTest {
         httpClient.respond(APK_URL, apkBytes)
         lateinit var download: Job
@@ -403,6 +436,7 @@ class GitHubUpdateRepositoryTest {
     private class FakeUpdateHttpClient : UpdateHttpClient {
         private val responses = mutableMapOf<String, () -> UpdateHttpResponse>()
         val requestThreads = mutableListOf<String>()
+        var onOpen: () -> Unit = {}
 
         fun respond(url: String, body: ByteArray) {
             responses[url] = { UpdateHttpResponse(ByteArrayInputStream(body), body.size.toLong()) }
@@ -419,6 +453,7 @@ class GitHubUpdateRepositoryTest {
         override fun open(url: String): UpdateHttpResponse {
             // Coroutine debug mode appends " @coroutine#N" to the thread name.
             requestThreads += Thread.currentThread().name.substringBefore(" @")
+            onOpen()
             return checkNotNull(responses[url]) { "Unexpected request to $url" }()
         }
     }

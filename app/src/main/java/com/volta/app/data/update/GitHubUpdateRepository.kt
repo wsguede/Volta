@@ -135,7 +135,7 @@ class GitHubUpdateRepository @Inject constructor(
         var bytesDownloaded = 0L
         var lastReported = 0L
         emit(DownloadProgress.InProgress(bytesDownloaded, totalBytes))
-        target.outputStream().use { output ->
+        localFileIo(target) { target.outputStream() }.use { output ->
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             while (true) {
                 // Blocking reads can't be interrupted, so cancellation takes effect here, after
@@ -145,7 +145,7 @@ class GitHubUpdateRepository @Inject constructor(
                 if (read < 0) break
                 bytesDownloaded += read
                 check(bytesDownloaded <= maxBytes) { "Update download exceeds $maxBytes bytes" }
-                output.write(buffer, 0, read)
+                localFileIo(target) { output.write(buffer, 0, read) }
                 if (bytesDownloaded - lastReported >= PROGRESS_STEP_BYTES) {
                     lastReported = bytesDownloaded
                     emit(DownloadProgress.InProgress(bytesDownloaded, totalBytes))

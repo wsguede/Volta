@@ -14,7 +14,7 @@ import javax.inject.Inject
 class ApkVerifier @Inject constructor(private val inspector: ApkInspector) {
 
     fun verify(apk: File, manifest: UpdateManifest): Result<Unit> = runCatching {
-        val actualSha256 = sha256Hex(apk)
+        val actualSha256 = localFileIo(apk) { sha256Hex(apk) }
         check(actualSha256.equals(manifest.sha256, ignoreCase = true)) {
             "SHA-256 mismatch: expected ${manifest.sha256}, got $actualSha256"
         }

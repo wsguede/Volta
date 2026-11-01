@@ -94,6 +94,15 @@ class ApkVerifierTest {
         assertThat(result.isFailure).isTrue()
     }
 
+    @Test
+    fun `reports an unreadable file as a storage failure, not as offline`() {
+        val missing = File(tempFolder.root, "missing.apk")
+
+        val result = verifier().verify(missing, manifest())
+
+        assertThat(result.exceptionOrNull()).isInstanceOf(IllegalStateException::class.java)
+    }
+
     private companion object {
         const val PACKAGE_NAME = "com.volta.app"
         const val INSTALLED_VERSION_CODE = 202610001L
