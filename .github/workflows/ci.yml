@@ -79,7 +79,11 @@ jobs:
       # Keyed on the Robolectric version only, so unrelated catalog bumps keep the cache.
       - name: Read Robolectric version
         id: robolectric
-        run: echo "version=$(sed -n 's/^robolectric = "\(.*\)"$/\1/p' gradle/libs.versions.toml)" >> "$GITHUB_OUTPUT"
+        run: |
+          version="$(sed -n 's/^robolectric = "\(.*\)"$/\1/p' gradle/libs.versions.toml)"
+          # An empty version would pin the cache key, because cache keys can't be overwritten.
+          test -n "$version" || { echo "::error::Robolectric version not found in the catalog"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # Robolectric downloads its Android framework jar into ~/.m2, outside the Gradle cache
       # (ADR 0019).
