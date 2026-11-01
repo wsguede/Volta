@@ -1,6 +1,11 @@
 package com.volta.app.di
 
+import com.volta.app.data.update.ApkInspector
 import com.volta.app.data.update.BuildVersionDeviceSdkDataSource
+import com.volta.app.data.update.GitHubUpdateRepository
+import com.volta.app.data.update.PackageManagerApkInspector
+import com.volta.app.data.update.UpdateHttpClient
+import com.volta.app.data.update.UrlConnectionUpdateHttpClient
 import com.volta.app.domain.settings.AppVersionDataSource
 import com.volta.app.domain.settings.SettingsRepository
 import com.volta.app.domain.time.Clock
@@ -23,9 +28,18 @@ abstract class UpdateModule {
     @Singleton
     abstract fun bindDeviceSdkDataSource(impl: BuildVersionDeviceSdkDataSource): DeviceSdkDataSource
 
+    // UpdateInstaller is bound in #59.
+    @Binds
+    @Singleton
+    abstract fun bindUpdateRepository(impl: GitHubUpdateRepository): UpdateRepository
+
+    @Binds
+    abstract fun bindUpdateHttpClient(impl: UrlConnectionUpdateHttpClient): UpdateHttpClient
+
+    @Binds
+    abstract fun bindApkInspector(impl: PackageManagerApkInspector): ApkInspector
+
     companion object {
-        // UpdateRepository is bound in #58. Injecting this use case before then fails the build
-        // with a Dagger MissingBinding error for UpdateRepository.
         @Provides
         fun provideCheckForUpdateUseCase(
             updateRepository: UpdateRepository,
